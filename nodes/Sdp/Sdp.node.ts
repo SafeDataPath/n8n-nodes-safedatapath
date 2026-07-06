@@ -15,7 +15,7 @@ export class Sdp implements INodeType {
 	description: INodeTypeDescription = {
 		displayName: 'SDP',
 		name: 'sdp',
-		icon: { light: 'file:sdp.light.svg', dark: 'file:sdp.dark.svg' },
+		icon: { light: 'file:SDP_LOGO.png', dark: 'file:sdp_logo_2.png' },
 		group: ['transform'],
 		version: 1,
 		subtitle: 'Capture this run in SDP',
@@ -42,6 +42,17 @@ export class Sdp implements INodeType {
 				required: true,
 				description: 'The n8n execution SDP should capture. Defaults to the current run.',
 			},
+			{
+				displayName: 'Verify URL Webhook',
+				name: 'callbackUrl',
+				type: 'string',
+				default: '',
+				placeholder: 'https://n8n.example.com/webhook/sdp-verify',
+				description:
+					'Optional. An n8n Webhook URL (in a separate workflow). Once SDP registers the pipeline, it POSTs '
+					+ '{ executionId, pipelineUuid, verifyUrl } here - so the Verify link is pushed back to n8n instead '
+					+ 'of being polled. Leave empty to skip.',
+			},
 		],
 	};
 
@@ -50,14 +61,20 @@ export class Sdp implements INodeType {
 
 		try {
 			const executionId = this.getNodeParameter('executionId', 0) as string;
+			const callbackUrl = (this.getNodeParameter('callbackUrl', 0, '') as string).trim();
 
 			const credentials = await this.getCredentials('sdpApi');
 			baseUrl = (credentials.baseUrl as string).replace(/\/+$/, '');
 
+			const body: IDataObject = { executionId };
+			if (callbackUrl) {
+				body.callbackUrl = callbackUrl;
+			}
+
 			const options: IHttpRequestOptions = {
 				method: 'POST',
 				url: `${baseUrl}${CAPTURE_PATH}`,
-				body: { executionId },
+				body,
 				json: true,
 			};
 
@@ -68,8 +85,12 @@ export class Sdp implements INodeType {
 			const result: IDataObject = {
 				sdp: 'capture requested',
 				executionId,
+				// The exact /verify/<pipelineUuid> link only exists after the async ingest (the run is not finished
+				// while this node executes), so we surface the SDP instance URL: the captured pipeline - and its
+				// Verify page - appears there a few seconds after the run ends.
+				sdpUrl: baseUrl,
 				message:
-					'SDP will register this run once it finishes; the verifiable pipeline appears in SDP shortly after.',
+					`SDP will register this run once it finishes. Open SDP to verify the pipeline: ${baseUrl}`,
 			};
 			return [this.helpers.returnJsonArray(result)];
 		} catch (error) {
