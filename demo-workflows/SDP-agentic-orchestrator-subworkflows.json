@@ -1,0 +1,466 @@
+{
+  "name": "SDP - Agentic orchestrator (saved sub-workflows)",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "name": "When chat message received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -480,
+        128
+      ],
+      "webhookId": "sdp-demo-chat",
+      "id": "e2734d2e-8e3c-487c-a349-59f79bdc2d69"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.chatInput }}",
+              "rightValue": "voice",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "name": "Voice or Text?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        128
+      ],
+      "id": "321206f8-fe72-4fb5-a665-2f4f741210cf"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "v1",
+              "name": "source",
+              "value": "voice",
+              "type": "string"
+            },
+            {
+              "id": "v2",
+              "name": "message",
+              "value": "={{ $json.chatInput }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Transcribe Voice (mock)",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        0,
+        0
+      ],
+      "id": "a3ad5412-a1a7-417a-a9c6-46ccd78ee4bb"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "t1",
+              "name": "source",
+              "value": "text",
+              "type": "string"
+            },
+            {
+              "id": "t2",
+              "name": "message",
+              "value": "={{ $json.chatInput }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Text Input",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        0,
+        224
+      ],
+      "id": "d072743d-dd02-4a22-b46b-ac40ad6e935f"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message }}",
+        "options": {
+          "systemMessage": "You are an orchestrator. You MUST route each request to at least one specialist tool (Email, Calendar, CRM, Lead) rather than answering directly. Call every specialist relevant to the request, then summarise their combined results for the user."
+        }
+      },
+      "name": "AI Orchestrator",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        288,
+        128
+      ],
+      "id": "fdf74ac7-1465-4cb3-b815-a74c4b12d353",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {},
+      "name": "Simple Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryBufferWindow",
+      "typeVersion": 1.4,
+      "position": [
+        272,
+        352
+      ],
+      "id": "3d0dcd09-1e0d-4b2e-97f7-04cf9887eb3f"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-5",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 5"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        120,
+        352
+      ],
+      "id": "5bc1dd11-2cf7-4a3a-9bed-acf977b7117d",
+      "name": "Anthropic Chat Model",
+      "credentials": {
+        "anthropicApi": {
+          "id": "Q3UeBzWKBSk7k54t",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "name": "Response",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        688,
+        32
+      ],
+      "id": "d22c4213-fcdb-47d4-8ffc-77b4ebb2853a"
+    },
+    {
+      "parameters": {},
+      "name": "Error Message",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        688,
+        240
+      ],
+      "id": "08607b2a-db1f-43ad-a8a8-8e7dcab53271"
+    },
+    {
+      "parameters": {},
+      "type": "CUSTOM.sdp",
+      "typeVersion": 1,
+      "position": [
+        896,
+        32
+      ],
+      "id": "7a722545-3c63-40e2-ae27-2909a10a4662",
+      "name": "SDP",
+      "credentials": {
+        "sdpApi": {
+          "id": "fRPQMXOnt9D7mLKv",
+          "name": "SDP account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "CUSTOM.sdp",
+      "typeVersion": 1,
+      "position": [
+        896,
+        240
+      ],
+      "id": "14a09541-2f5f-49ea-a20f-cea5bf7f06e8",
+      "name": "SDP1",
+      "credentials": {
+        "sdpApi": {
+          "id": "fRPQMXOnt9D7mLKv",
+          "name": "SDP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "description": "Handles email: read, send and draft messages. Input: a plain-language task for the email specialist.",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "SDP Email Specialist"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        40,
+        560
+      ],
+      "id": "c198dc6d-0af1-4b1a-a5db-c374c0d09444",
+      "name": "Email Specialist"
+    },
+    {
+      "parameters": {
+        "description": "Handles calendar: list, create and check events. Input: a plain-language task for the calendar specialist.",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "SDP Calendar Specialist"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        200,
+        560
+      ],
+      "id": "26777ec5-78e1-4e50-ae56-f27307208bd8",
+      "name": "Calendar Specialist"
+    },
+    {
+      "parameters": {
+        "description": "Handles CRM contacts: search and upsert records. Input: a plain-language task for the CRM specialist.",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "SDP CRM Specialist"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        360,
+        560
+      ],
+      "id": "d57cb5d5-9596-4e99-8695-116169e8c859",
+      "name": "CRM Specialist"
+    },
+    {
+      "parameters": {
+        "description": "Enriches leads via web search and LinkedIn lookups. Input: a plain-language task for the lead specialist.",
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "SDP Lead Specialist"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2.2,
+      "position": [
+        520,
+        560
+      ],
+      "id": "f6a34ad2-b16c-4631-a16f-4b3fc662d6d3",
+      "name": "Lead Specialist"
+    }
+  ],
+  "connections": {
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Voice or Text?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Voice or Text?": {
+      "main": [
+        [
+          {
+            "node": "Transcribe Voice (mock)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Text Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribe Voice (mock)": {
+      "main": [
+        [
+          {
+            "node": "AI Orchestrator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Text Input": {
+      "main": [
+        [
+          {
+            "node": "AI Orchestrator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simple Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Orchestrator",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Orchestrator",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Orchestrator": {
+      "main": [
+        [
+          {
+            "node": "Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Response": {
+      "main": [
+        [
+          {
+            "node": "SDP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Message": {
+      "main": [
+        [
+          {
+            "node": "SDP1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email Specialist": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Orchestrator",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calendar Specialist": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Orchestrator",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CRM Specialist": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Orchestrator",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Specialist": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Orchestrator",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

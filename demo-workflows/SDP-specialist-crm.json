@@ -1,0 +1,141 @@
+{
+  "name": "SDP CRM Specialist",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "5e0cbc97-d5ab-4c27-94f8-a5296f8e2f09",
+      "name": "When Executed by Another Workflow"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.query }}",
+        "options": {
+          "systemMessage": "You are the CRM specialist. Use your tools to look up or upsert CRM contacts, then return a concise result."
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        240,
+        0
+      ],
+      "id": "d432d25d-4d45-4294-b7a2-373bcb34974d",
+      "name": "Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "claude-sonnet-5",
+          "mode": "list",
+          "cachedResultName": "Claude Sonnet 5"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.5,
+      "position": [
+        140,
+        220
+      ],
+      "id": "a3266216-adc4-483e-a2fe-d65add94cdad",
+      "name": "Anthropic Chat Model",
+      "credentials": {
+        "anthropicApi": {
+          "id": "Q3UeBzWKBSk7k54t",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "Look up a CRM contact.",
+        "url": "https://jsonplaceholder.typicode.com/users/1"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        320,
+        220
+      ],
+      "id": "01192ea9-9ef1-4f94-a001-0ffbe72e4914",
+      "name": "Get Contact"
+    },
+    {
+      "parameters": {
+        "toolDescription": "Create or update a CRM contact.",
+        "url": "https://jsonplaceholder.typicode.com/users/2"
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        520,
+        220
+      ],
+      "id": "d7a881b1-319b-4287-8b97-0bebdb971fef",
+      "name": "Upsert Contact"
+    }
+  ],
+  "connections": {
+    "When Executed by Another Workflow": {
+      "main": [
+        [
+          {
+            "node": "Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Contact": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert Contact": {
+      "ai_tool": [
+        [
+          {
+            "node": "Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}
