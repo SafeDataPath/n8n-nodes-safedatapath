@@ -1,0 +1,28 @@
+{
+  "name": "SDP failure probe",
+  "nodes": [
+    { "parameters": {}, "id": "cccccccc-0000-4000-8000-000000000001",
+      "name": "When clicking Test", "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1, "position": [-220, 0] },
+    { "parameters": { "url": "http://127.0.0.1:1/invoices", "options": {} },
+      "id": "cccccccc-0000-4000-8000-000000000002",
+      "name": "Fetch invoice (soft fail)", "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2, "position": [0, 0], "onError": "continueRegularOutput" },
+    { "parameters": { "assignments": { "assignments": [
+      { "id": "1", "name": "stored", "value": false, "type": "boolean" } ] }, "options": {} },
+      "id": "cccccccc-0000-4000-8000-000000000003",
+      "name": "Store result", "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4, "position": [220, 0] },
+    { "parameters": { "jsCode": "const invoice = undefined;\nreturn [{ json: { total: invoice.total } }];" },
+      "id": "cccccccc-0000-4000-8000-000000000004",
+      "name": "Compute total (hard fail)", "type": "n8n-nodes-base.code",
+      "typeVersion": 2, "position": [440, 0] }
+  ],
+  "connections": {
+    "When clicking Test":        { "main": [[{ "node": "Fetch invoice (soft fail)", "type": "main", "index": 0 }]] },
+    "Fetch invoice (soft fail)": { "main": [[{ "node": "Store result",             "type": "main", "index": 0 }]] },
+    "Store result":              { "main": [[{ "node": "Compute total (hard fail)", "type": "main", "index": 0 }]] }
+  },
+  "settings": {},
+  "pinData": {}
+}
