@@ -6,9 +6,12 @@ import {
 	type IDataObject,
 	type IExecuteFunctions,
 	type IHttpRequestOptions,
+	type ILoadOptionsFunctions,
 	type INodeExecutionData,
+	type INodePropertyOptions,
 	type INodeType,
 	type INodeTypeDescription,
+	type NodeTypeAndVersion,
 } from 'n8n-workflow';
 
 // Every SDP endpoint lives under /api. Omitting that prefix does NOT fail loudly: the request falls through
@@ -324,19 +327,16 @@ export class Sdp implements INodeType {
 					+ 'straight from those nodes\' output instead.',
 			},
 			{
-				displayName: 'Source Node Names',
+				displayName: 'Source Node Names or IDs',
 				name: 'sourceNodeNames',
-				type: 'string',
-				typeOptions: { multipleValues: true, multipleValueButtonText: 'Add Node' },
+				type: 'multiOptions',
+				typeOptions: { loadOptionsMethod: 'getSelectableNodes' },
 				default: [],
 				displayOptions: { show: { hashBinaryFiles: [true], fileSources: ['nodes', 'both'] } },
-				placeholder: 'Generate invoice PDF',
-				description:
-					'Names of the nodes whose files to fingerprint, exactly as they appear on the canvas. Each '
-					+ 'must run BEFORE this node in the same execution. Renaming a node on the canvas does NOT '
-					+ 'update this list - a name that produced nothing is reported in this node\'s output under '
-					+ 'unresolvedSourceNodes rather than failing the run, since a branch the run did not take is '
-					+ 'a normal outcome.',
+				// Deliberately ONE string literal rather than a concatenation: the n8n lint rule reads the
+				// description through an AST getter that only recognises a plain literal, so a concatenated
+				// description reads as absent and the autofixer inserts a second, duplicate `description` key.
+				description: 'The nodes whose files to fingerprint. The list comes from the workflow graph, so every other node is selectable straight away, with nothing executed yet. What ordering costs is a runtime matter, not a selection one: a node that has not run by the time this one executes produced nothing, and is reported under unresolvedSourceNodes instead of failing the run. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
 			},
 			{
 				displayName: 'Verify URL Webhook',
@@ -350,6 +350,48 @@ export class Sdp implements INodeType {
 					+ 'of being polled. Leave empty to skip.',
 			},
 		],
+	};
+
+	methods = {
+		loadOptions: {
+			/**
+			 * Populates the "Source Nodes" picker with the other nodes of this workflow.
+			 * <p>
+			 * `getParentNodes` and `getChildNodes` are reachable here because `ILoadOptionsFunctions` extends
+			 * `FunctionsBase`, which declares them. Both walk the workflow GRAPH (`this.workflow.nodes`), never
+			 * run data, so the list is complete as soon as the nodes sit on the canvas: choosing a source needs
+			 * no prior execution of anything.
+			 * <p>
+			 * Neither primitive returns "every node", so the set is assembled in three passes. Ancestors and
+			 * descendants come directly. A node on a PARALLEL branch is neither, yet it can perfectly well have
+			 * run before this one, so those are reached through the ancestors' own children. Listing ancestors
+			 * alone would have quietly made them unselectable.
+			 * <p>
+			 * Ordering is a runtime concern, not a selection one: a node that has not run by the time this one
+			 * executes simply produced nothing, which the execute path reports as `unresolvedSourceNodes`.
+			 * Disabled nodes are dropped, since they never produce output at all.
+			 */
+			async getSelectableNodes(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
+				const self = this.getNode().name;
+				const found = new Set<string>();
+				const collect = (nodes: NodeTypeAndVersion[]) => {
+					for (const node of nodes) {
+						if (node.name !== self && !node.disabled) {
+							found.add(node.name);
+						}
+					}
+				};
+				const ancestors = this.getParentNodes(self);
+				collect(ancestors);
+				collect(this.getChildNodes(self));
+				for (const ancestor of ancestors) {
+					collect(this.getChildNodes(ancestor.name));
+				}
+				return [...found]
+					.sort((a, b) => a.localeCompare(b))
+					.map((name) => ({ name, value: name }));
+			},
+		},
 	};
 
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
