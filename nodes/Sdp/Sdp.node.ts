@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import {
 	NodeConnectionTypes,
 	NodeOperationError,
+	type IBinaryData,
 	type IDataObject,
 	type IExecuteFunctions,
 	type IHttpRequestOptions,
@@ -127,28 +128,113 @@ async function collectBinaryDigests(
 			continue;
 		}
 		for (const property of Object.keys(binary)) {
-			const buffer = await ctx.helpers.getBinaryDataBuffer(itemIndex, property);
-			const meta = binary[property];
-			// Fall back to a synthetic name rather than leaving it unset: SDP hangs the download of a retained
-			// file off its file_name metadata, so a nameless upload is stored but never offered for download.
-			// The SAME value is used for the upload and reported here, so the two can never disagree.
-			const fileName = meta.fileName ?? `${property}.bin`;
-			digests.push({
-				nodeName,
-				itemIndex,
-				property,
-				fileName,
-				mimeType: meta.mimeType,
-				// The buffer's own length, not meta.fileSize: that one is a display string ("1.2 MB").
-				bytes: buffer.length,
-				algorithm: HASH_ALGORITHM,
-				encoding: HASH_ENCODING,
-				hash: createHash(HASH_ALGORITHM).update(buffer).digest(HASH_ENCODING),
-				fileTransferId: uploadFiles ? await uploadFile(ctx, baseUrl, buffer, fileName) : undefined,
-			});
+			// The property NAME, not the metadata object: for data on this node's own input that is the
+			// accessor n8n documents, and it resolves the item's binary through the input it arrived on.
+			digests.push(
+				await digestFromBinary(ctx, baseUrl, uploadFiles, nodeName, itemIndex, property, binary[property], property),
+			);
 		}
 	}
 	return digests;
+}
+
+/** What {@link collectDigestsFromNodes} found, plus the names it could not read anything from. */
+interface NodeSourcedDigests {
+	digests: BinaryDigest[];
+	/** Named nodes that produced no output in this run — a typo, or a branch the run never took. */
+	unresolved: string[];
+}
+
+/**
+ * Fingerprints the files produced by NAMED nodes, with no connection to this node.
+ * <p>
+ * Wiring every file-producing node into the SDP node is what makes a real workflow's canvas unreadable, and the
+ * wires buy nothing: n8n exposes any already-executed node's output through the workflow data proxy. `$items`
+ * returns that output, and `getBinaryDataBuffer` accepts a binary metadata object directly, so the bytes are
+ * reachable whatever backend holds them (memory, filesystem, S3, Azure) — which matters because the storage
+ * mode is not ours to choose on n8n Cloud.
+ * <p>
+ * The named node must have run BEFORE this one in the same execution; a node this run never reached simply has
+ * no output. That is a normal outcome (an untaken branch), not a configuration error, so it is reported rather
+ * than raised — but it is reported, because a silently ignored typo would leave the customer believing a file
+ * was fingerprinted when it never was.
+ */
+async function collectDigestsFromNodes(
+	ctx: IExecuteFunctions,
+	baseUrl: string,
+	uploadFiles: boolean,
+	nodeNames: string[],
+): Promise<NodeSourcedDigests> {
+	const proxy = ctx.getWorkflowDataProxy(0);
+	const digests: BinaryDigest[] = [];
+	const unresolved: string[] = [];
+
+	for (const rawName of nodeNames) {
+		const nodeName = rawName.trim();
+		if (!nodeName) {
+			continue;
+		}
+		let items: INodeExecutionData[] = [];
+		try {
+			items = proxy.$items(nodeName) ?? [];
+		} catch {
+			// $items throws on a name the workflow does not know, and on a node with no run data.
+			items = [];
+		}
+		if (items.length === 0) {
+			unresolved.push(nodeName);
+			continue;
+		}
+		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
+			const binary = items[itemIndex].binary;
+			if (!binary) {
+				continue;
+			}
+			for (const property of Object.keys(binary)) {
+				const meta = binary[property];
+				// The metadata object, not the property name: the name would be resolved against THIS node's
+				// input, which the file never travelled through.
+				digests.push(
+					await digestFromBinary(ctx, baseUrl, uploadFiles, nodeName, itemIndex, property, meta, meta),
+				);
+			}
+		}
+	}
+	return { digests, unresolved };
+}
+
+/**
+ * Builds one digest entry, uploading the bytes too when keep-file mode is on. `binaryRef` is how the bytes are
+ * addressed - see the two call sites, which address them differently.
+ */
+async function digestFromBinary(
+	ctx: IExecuteFunctions,
+	baseUrl: string,
+	uploadFiles: boolean,
+	nodeName: string,
+	itemIndex: number,
+	property: string,
+	meta: IBinaryData,
+	binaryRef: string | IBinaryData,
+): Promise<BinaryDigest> {
+	const buffer = await ctx.helpers.getBinaryDataBuffer(itemIndex, binaryRef);
+	// Fall back to a synthetic name rather than leaving it unset: SDP hangs the download of a retained
+	// file off its file_name metadata, so a nameless upload is stored but never offered for download.
+	// The SAME value is used for the upload and reported here, so the two can never disagree.
+	const fileName = meta.fileName ?? `${property}.bin`;
+	return {
+		nodeName,
+		itemIndex,
+		property,
+		fileName,
+		mimeType: meta.mimeType,
+		// The buffer's own length, not meta.fileSize: that one is a display string ("1.2 MB").
+		bytes: buffer.length,
+		algorithm: HASH_ALGORITHM,
+		encoding: HASH_ENCODING,
+		hash: createHash(HASH_ALGORITHM).update(buffer).digest(HASH_ENCODING),
+		fileTransferId: uploadFiles ? await uploadFile(ctx, baseUrl, buffer, fileName) : undefined,
+	};
 }
 
 export class Sdp implements INodeType {
@@ -209,6 +295,50 @@ export class Sdp implements INodeType {
 					+ 'structural change to the workflow so a new schema version is created with this on.',
 			},
 			{
+				displayName: 'Files To Fingerprint',
+				name: 'fileSources',
+				type: 'options',
+				default: 'input',
+				displayOptions: { show: { hashBinaryFiles: [true] } },
+				// Alphabetical, as the n8n community-node linter requires; 'input' stays the default.
+				options: [
+					{
+						name: 'Both',
+						value: 'both',
+						description: 'The files reaching this node, plus the output of the nodes named below',
+					},
+					{
+						name: 'Files From Named Nodes',
+						value: 'nodes',
+						description: 'Read the output of nodes named below, with no connection to this node',
+					},
+					{
+						name: 'Files Reaching This Node',
+						value: 'input',
+						description: 'Only the files carried by the connections wired into this node',
+					},
+				],
+				description:
+					'Where the files to fingerprint come from. Naming nodes avoids wiring every file-producing '
+					+ 'node into this one, which is what makes a real workflow unreadable - the files are read '
+					+ 'straight from those nodes\' output instead.',
+			},
+			{
+				displayName: 'Source Node Names',
+				name: 'sourceNodeNames',
+				type: 'string',
+				typeOptions: { multipleValues: true, multipleValueButtonText: 'Add Node' },
+				default: [],
+				displayOptions: { show: { hashBinaryFiles: [true], fileSources: ['nodes', 'both'] } },
+				placeholder: 'Generate invoice PDF',
+				description:
+					'Names of the nodes whose files to fingerprint, exactly as they appear on the canvas. Each '
+					+ 'must run BEFORE this node in the same execution. Renaming a node on the canvas does NOT '
+					+ 'update this list - a name that produced nothing is reported in this node\'s output under '
+					+ 'unresolvedSourceNodes rather than failing the run, since a branch the run did not take is '
+					+ 'a normal outcome.',
+			},
+			{
 				displayName: 'Verify URL Webhook',
 				name: 'callbackUrl',
 				type: 'string',
@@ -242,7 +372,26 @@ export class Sdp implements INodeType {
 			// are no longer reachable.
 			const hashBinaryFiles = this.getNodeParameter('hashBinaryFiles', 0, true) as boolean;
 			const uploadBinaryFiles = hashBinaryFiles && (this.getNodeParameter('uploadBinaryFiles', 0, false) as boolean);
-			const binaryDigests = hashBinaryFiles ? await collectBinaryDigests(this, baseUrl, uploadBinaryFiles) : [];
+			const fileSources = hashBinaryFiles ? (this.getNodeParameter('fileSources', 0, 'input') as string) : 'input';
+
+			const binaryDigests: BinaryDigest[] = [];
+			if (hashBinaryFiles && fileSources !== 'nodes') {
+				binaryDigests.push(...(await collectBinaryDigests(this, baseUrl, uploadBinaryFiles)));
+			}
+			let unresolvedSourceNodes: string[] = [];
+			if (hashBinaryFiles && fileSources !== 'input') {
+				const sourceNodeNames = this.getNodeParameter('sourceNodeNames', 0, []) as string[];
+				const fromNodes = await collectDigestsFromNodes(this, baseUrl, uploadBinaryFiles, sourceNodeNames);
+				unresolvedSourceNodes = fromNodes.unresolved;
+				// In "both" mode a named node may ALSO be wired in, and hashing the same file twice would
+				// register it twice against the same trace. Node + item + property identifies it exactly.
+				const seen = new Set(binaryDigests.map((d) => `${d.nodeName}|${d.itemIndex}|${d.property}`));
+				for (const digest of fromNodes.digests) {
+					if (!seen.has(`${digest.nodeName}|${digest.itemIndex}|${digest.property}`)) {
+						binaryDigests.push(digest);
+					}
+				}
+			}
 			if (binaryDigests.length > 0) {
 				body.binaryHashes = binaryDigests;
 			}
@@ -266,6 +415,9 @@ export class Sdp implements INodeType {
 				// SDP registered.
 				filesFingerprinted: binaryDigests.length,
 				...(binaryDigests.length > 0 ? { binaryHashes: binaryDigests } : {}),
+				// Surfaced, never silent: a mistyped or renamed node name looks exactly like a successful run
+				// otherwise, and the customer would only discover the missing file when trying to verify it.
+				...(unresolvedSourceNodes.length > 0 ? { unresolvedSourceNodes } : {}),
 				// The exact /verify/<pipelineUuid> link only exists after the async ingest (the run is not finished
 				// while this node executes), so we surface the SDP instance URL: the captured pipeline - and its
 				// Verify page - appears there a few seconds after the run ends.
