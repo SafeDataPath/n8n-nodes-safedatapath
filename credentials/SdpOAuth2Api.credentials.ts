@@ -13,7 +13,8 @@ export class SdpOAuth2Api implements ICredentialType {
 
 	documentationUrl = 'https://safedatapath.io';
 
-	icon: Icon = { light: 'file:sdp.light.svg', dark: 'file:sdp.dark.svg' };
+	// Same logo as the node, so the Connect button and the credential page show SDP's own mark.
+	icon: Icon = { light: 'file:SDP_LOGO.png', dark: 'file:sdp_logo_2.png' };
 
 	properties: INodeProperties[] = [
 		{
