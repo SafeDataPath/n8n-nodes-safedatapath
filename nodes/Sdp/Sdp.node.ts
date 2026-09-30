@@ -55,6 +55,12 @@ const CREDENTIAL_BY_AUTHENTICATION: Record<string, string> = {
 	oAuth2: 'sdpOAuth2Api',
 };
 
+// OAuth2 first on purpose: it is the one-click way, decided on FCT-1676.
+const AUTHENTICATION_OPTIONS: INodePropertyOptions[] = [
+	{ name: 'OAuth2 (SDP, Microsoft or Google)', value: 'oAuth2' },
+	{ name: 'API Key (Machine User)', value: 'apiKey' },
+];
+
 /** The credential of the Authentication option chosen on this node. API Key for a node saved before it existed. */
 function sdpCredentialName(ctx: IExecuteFunctions): string {
 	const authentication = ctx.getNodeParameter('authentication', 0, 'apiKey') as string;
@@ -262,7 +268,10 @@ export class Sdp implements INodeType {
 		name: 'sdp',
 		icon: { light: 'file:SDP_LOGO.png', dark: 'file:sdp_logo_2.png' },
 		group: ['transform'],
-		version: 1,
+		// FCT-1676. Version 2 only changes the Authentication default to OAuth2. A node saved as version 1
+		// keeps API Key, so an existing workflow keeps its credential.
+		version: [1, 2],
+		defaultVersion: 2,
 		subtitle: 'Capture this run in SDP',
 		description:
 			'Register this workflow run in SafeDataPath (SDP) as a cryptographically verifiable pipeline - including AI prompts, model and token usage. SDP captures the run once it finishes.',
@@ -280,14 +289,19 @@ export class Sdp implements INodeType {
 				displayName: 'Authentication',
 				name: 'authentication',
 				type: 'options',
-				// OAuth2 first on purpose: it is the one-click way, decided on FCT-1676.
-				// eslint-disable-next-line @n8n/community-nodes/options-sorted-alphabetically
-				options: [
-					{ name: 'OAuth2 (SDP, Microsoft or Google)', value: 'oAuth2' },
-					{ name: 'API Key (Machine User)', value: 'apiKey' },
-				],
+				options: AUTHENTICATION_OPTIONS,
 				// API Key, so a workflow saved before this option existed keeps its credential.
 				default: 'apiKey',
+				displayOptions: { show: { '@version': [1] } },
+			},
+			{
+				displayName: 'Authentication',
+				name: 'authentication',
+				type: 'options',
+				options: AUTHENTICATION_OPTIONS,
+				// OAuth2, so a new node opens on n8n's "Connect to SDP" button.
+				default: 'oAuth2',
+				displayOptions: { show: { '@version': [2] } },
 			},
 			{
 				displayName:

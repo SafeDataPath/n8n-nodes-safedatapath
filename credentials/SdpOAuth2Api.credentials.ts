@@ -1,8 +1,9 @@
 import type { ICredentialType, Icon, INodeProperties } from 'n8n-workflow';
 
-// FCT-1676. Connect to SDP with OAuth2 (PKCE), the way HubSpot's OAuth2 credential works: the user only
-// sees the SDP address, everything else is fixed. The SDP side (authorize and token endpoints, the public
-// "n8n" client) is FCT-1628; until it ships, Connect opens /oauth/authorize and fails.
+// FCT-1676. Connect to SDP with OAuth2 (PKCE), the way HubSpot's OAuth2 credential works. Every field is
+// hidden, so n8n shows its "Connect to SDP" button straight in the node. The SDP side (authorize and
+// token endpoints, the public "n8n" client) is FCT-1628; until it ships, Connect opens /oauth/authorize
+// and fails.
 export class SdpOAuth2Api implements ICredentialType {
 	name = 'sdpOAuth2Api';
 
@@ -18,12 +19,10 @@ export class SdpOAuth2Api implements ICredentialType {
 		{
 			displayName: 'Base URL',
 			name: 'baseUrl',
-			type: 'string',
-			// The SDP instance n8n users connect to. Kept editable for a local or test SDP.
+			// Hidden: n8n offers its quick connect button only when the user has nothing to fill in. A local or
+			// test SDP sets it on the n8n instance instead, with CREDENTIALS_OVERWRITE_DATA.
+			type: 'hidden',
 			default: 'https://n8n.safedatapath.eu',
-			placeholder: 'https://n8n.safedatapath.eu',
-			description: 'Root URL of the SDP instance, without a trailing slash. Keep the default unless told otherwise.',
-			required: true,
 		},
 		{
 			displayName: 'Use Dynamic Client Registration',
