@@ -37,7 +37,8 @@
     "n8nNodesApiVersion": 1,
     "strict": true,
     "credentials": [
-      "dist/credentials/SdpApi.credentials.js"
+      "dist/credentials/SdpApi.credentials.js",
+      "dist/credentials/SdpOAuth2Api.credentials.js"
     ],
     "nodes": [
       "dist/nodes/Sdp/Sdp.node.js"
