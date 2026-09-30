@@ -17,19 +17,27 @@ then install `n8n-nodes-sdp` from **Settings → Community Nodes**.
 In the SDP node, **Authentication** picks how the node signs in to SDP. n8n then shows its
 **Setup credential** dropdown with both options (FCT-1676).
 
-**OAuth2 (SDP, Microsoft or Google)**: create an **SDP OAuth2 API** credential and click
-**Connect my account**, then sign in to SDP with a password, a Microsoft or a Google account and
-approve. Only **Base URL** is shown, already set to `https://n8n.safedatapath.eu`; change it only for
-another SDP instance. The rest is fixed: PKCE, the public client `n8n`, no client secret. This needs the
-SDP OAuth2 server of FCT-1628; until it ships, Connect fails.
+**OAuth2 (SDP, Microsoft or Google)**, the default for a new node: click **Connect to SDP** in the
+node, then sign in to SDP with a password, a Microsoft or a Google account and approve. There is
+nothing to fill in: the SDP address `https://n8n.safedatapath.eu`, PKCE, the public client `n8n` and
+the empty client secret are all fixed. That is what makes n8n show its one-click button, on n8n Cloud
+and self-hosted alike. For a local or test SDP, set the address on the n8n instance:
+
+```
+CREDENTIALS_OVERWRITE_DATA={"sdpOAuth2Api":{"baseUrl":"http://localhost:8081"}}
+```
+
+This needs the SDP OAuth2 server of FCT-1628; until it ships, Connect fails.
 
 **API Key (Machine User)**: create an **SDP API** credential:
 
 - **Base URL**: root URL of your SDP instance (no trailing slash).
 - **API Key**: an SDP machine-user token holding the `PIPELINE_INSERT` permission.
 
-The key is sent as `Authorization: Bearer <apiKey>`. API Key is the default, so a workflow saved
-before the OAuth2 option existed keeps working unchanged.
+The key is sent as `Authorization: Bearer <apiKey>`.
+
+The node is at version 2. Version 2 only moves the Authentication default to OAuth2. A node saved
+as version 1, before the OAuth2 option existed, stays on API Key and keeps working unchanged.
 
 ## Operations
 
