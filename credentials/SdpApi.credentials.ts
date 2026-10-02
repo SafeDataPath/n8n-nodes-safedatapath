@@ -23,9 +23,10 @@ export class SdpApi implements ICredentialType {
 			displayName: 'Base URL',
 			name: 'baseUrl',
 			type: 'string',
-			default: '',
-			placeholder: 'https://your-sdp-instance.example.com',
-			description: 'Root URL of the SDP instance, without a trailing slash',
+			// FCT-1571: the SDP instance n8n users connect to. Kept editable for a local or test SDP.
+			default: 'https://n8n.safedatapath.eu',
+			placeholder: 'https://n8n.safedatapath.eu',
+			description: 'Root URL of the SDP instance, without a trailing slash. Keep the default unless told otherwise.',
 			required: true,
 		},
 		{

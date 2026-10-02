@@ -16,7 +16,7 @@ then install `n8n-nodes-sdp` from **Settings → Community Nodes**.
 
 Create an **SDP API** credential:
 
-- **Base URL** — root URL of your SDP instance (no trailing slash), e.g. `https://sdp.example.com`.
+- **Base URL**: already set to `https://n8n.safedatapath.eu`. Change it only for another SDP instance (no trailing slash).
 - **API Key** — an SDP machine-user token holding the `PIPELINE_INSERT` permission.
 
 The key is sent as `Authorization: Bearer <apiKey>`.
