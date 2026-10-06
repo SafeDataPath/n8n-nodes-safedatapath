@@ -36,6 +36,32 @@ Step Name, Step Type, Hash Algorithm (SHA-256 / SHA-512), Hash Encoding (Hex / B
 > output of every other node. For whole-workflow, zero-touch capture of every node's I/O, use SDP's
 > server-side polling integration instead.
 
+## Nothing arrives in SDP
+
+The node only tells SDP which execution to capture. SDP then reads the execution back from n8n, so
+SDP needs three things of its own. Check them in this order:
+
+1. **The node is green in n8n.** A 401 or 403 on the node means the SDP API key of the credential is
+   wrong or lacks `PIPELINE_INSERT`.
+2. **SDP knows where n8n is.** On the SDP server, `sdp.n8n.base-url` must be the root address of this
+   n8n instance, for example `https://n8n.example.com`, with no path. The address shown in the browser
+   (`.../home/workflows`) does not work. Its default is `http://localhost:5678`, which only fits a
+   local setup. SDP must be able to reach that address.
+3. **SDP holds an n8n API key** for the tenant, saved on the SDP Secret page, and that key may read
+   the executions and workflows of this n8n user.
+
+The SDP log says which one is missing. Search it for `n8n capture:`. To test point 2 and 3 from the
+SDP server, with the id of a finished execution:
+
+```bash
+curl -s -o /dev/null -w "%{http_code} %{content_type}\n" \
+  -H "X-N8N-API-KEY: <n8n API key>" \
+  "<sdp.n8n.base-url>/api/v1/executions/<id>?includeData=true"
+```
+
+`200 application/json` is right. `200 text/html` means the base URL carries a path. `401` or `403`
+means n8n refuses the key. `404` means n8n did not keep this execution, or the key cannot see it.
+
 ## Development
 
 ```bash
