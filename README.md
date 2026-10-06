@@ -45,8 +45,8 @@ SDP needs three things of its own. Check them in this order:
    wrong or lacks `PIPELINE_INSERT`.
 2. **SDP knows where n8n is.** On the SDP server, `sdp.n8n.base-url` must be the root address of this
    n8n instance, for example `https://n8n.example.com`, with no path. The address shown in the browser
-   (`.../home/workflows`) does not work. Its default is `http://localhost:5678`, which only fits a
-   local setup. SDP must be able to reach that address.
+   (`.../home/workflows`) does not work. When the key is not set at all, SDP calls the Factiven n8n
+   test instance and logs a warning at each capture. SDP must be able to reach the address.
 3. **SDP holds an n8n API key** for the tenant, saved on the SDP Secret page, and that key may read
    the executions and workflows of this n8n user.
 
