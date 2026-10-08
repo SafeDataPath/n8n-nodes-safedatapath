@@ -4,21 +4,27 @@
 #
 #     bash n8n-nodes-sdp/test/integration/ci.sh
 #
-# It builds the community node, packs it the way npm would publish it, and installs the result on the n8n
-# instance hosted on OVH, so that the SDP node and the SDP API credential appear in the editor.
+# It builds the community node, packs it the way npm would publish it, and hands the archive to the n8n
+# host, so the SDP node and the SDP API credential appear in the editor.
 #
 # It lives in the repository rather than in the build configuration so it can be reviewed, and so a change
 # to the deployment travels with the change to the node it deploys.
 #
 # What it expects from the build, and does not do itself:
-#   - a Node 22 runtime (the build configuration runs this inside node:22)
+#   - a Node 22 runtime (the build configuration runs this inside node:22). 22.13 is the real floor: the
+#     n8n-node toolchain require()s an ES module, which older releases refuse.
 #   - N8N_DEPLOY           "true" to install; anything else builds and packs only
-#   - N8N_DEPLOY_KEY       the deployment account's private SSH key, as a secure build parameter
-#   - N8N_DEPLOY_HOST_KEY  the server's public host key, one known_hosts line, as a build parameter
+#   - N8N_DEPLOY_KEY       the deploy-n8n private key, as a secure build parameter
+#   - N8N_DEPLOY_HOST_KEY  the server's public host keys, known_hosts lines, as a build parameter
 #
 # Build and pack always run. Installing is opt-in because this configuration builds every branch
-# (+:refs/heads/*) while there is a single n8n instance: without the guard, whichever branch happened to
-# build last would silently replace the node everyone else is looking at.
+# (+:refs/heads/*) while there is a single n8n instance: without the guard, whichever branch built last
+# would silently replace the node everyone else is looking at.
+#
+# Nothing here runs a command of its own choosing on the server. The archive is copied to a fixed path the
+# deployment account owns, and one argument-less command is invoked; everything that needs root — reading
+# the docker volume, replacing the directory, restarting the container — lives in that command, on the
+# host, where it can be audited. See ovh/vps-n8n/usr/local/sbin/install-n8n-node in the infra repository.
 set -euo pipefail
 
 # Resolve the package directory from this script's own location, so the build can call it from the
@@ -28,12 +34,9 @@ PKG_DIR=$(cd "${SCRIPT_DIR}/../.." && pwd)
 
 DEPLOY="${N8N_DEPLOY:-false}"
 HOST="${N8N_DEPLOY_HOST:-vps-dfa08bb7.vps.ovh.net}"
-SSH_USER="${N8N_DEPLOY_USER:-debian}"
-CONTAINER="${N8N_CONTAINER:-n8n}"
-
-# The node has to land inside the n8n container, under /home/node/.n8n, which is this named volume. Writing
-# to ~/.n8n on the host achieves nothing: that directory does not exist there, and n8n never reads it.
-VOLUME_DATA="${N8N_VOLUME_DATA:-/var/lib/docker/volumes/n8n_n8n_storage/_data}"
+SSH_USER="${N8N_DEPLOY_USER:-deploy-n8n}"
+INCOMING="${N8N_DEPLOY_INCOMING:-/var/lib/n8n-node-deploy/incoming.tgz}"
+INSTALLER="${N8N_DEPLOY_INSTALLER:-/usr/local/sbin/install-n8n-node}"
 
 cd "${PKG_DIR}"
 
@@ -91,7 +94,7 @@ if ! command -v ssh >/dev/null 2>&1; then
 fi
 
 if [ -z "${N8N_DEPLOY_KEY:-}" ]; then
-  echo "❌ N8N_DEPLOY_KEY is empty. Add it as a secure parameter holding the deployment private key."
+  echo "❌ N8N_DEPLOY_KEY is empty. It holds the deploy-n8n private key, as a secure parameter."
   exit 1
 fi
 
@@ -121,74 +124,16 @@ fi
 SSH_OPTS=(-i "${KEY}" -o "UserKnownHostsFile=${KNOWN}" "${HOST_CHECK[@]}" -o ConnectTimeout=20 -o BatchMode=yes)
 TARGET="${SSH_USER}@${HOST}"
 
-echo "➡️ Installing on ${TARGET}"
-ssh "${SSH_OPTS[@]}" "${TARGET}" 'echo "connected as $(whoami) on $(hostname)"'
-scp "${SSH_OPTS[@]}" "${TARBALL}" "${TARGET}:/tmp/${TARBALL}"
-
 # -------------------------------------------------------------------------------------------------------
-# 3. Install, restart, verify
+# 3. Hand it over
 # -------------------------------------------------------------------------------------------------------
 
-# Unquoted heredoc: ${TARBALL}, ${VOLUME_DATA} and ${CONTAINER} are substituted here, and everything the
-# remote shell has to evaluate for itself is escaped as \$.
-ssh "${SSH_OPTS[@]}" "${TARGET}" "bash -s" <<REMOTE
-set -euo pipefail
-VOL="${VOLUME_DATA}"
-DEST="\${VOL}/custom/n8n-nodes-sdp"
+echo "➡️ Copying to ${TARGET}:${INCOMING}"
+scp "${SSH_OPTS[@]}" "${TARBALL}" "${TARGET}:${INCOMING}"
 
-# Every test below goes through sudo. /var/lib/docker is drwx--x--- root:root, so an unprivileged account
-# cannot even stat inside it: a plain [ -d ] answers "no" for a directory that is there, and the script
-# would stop on a message blaming the wrong thing.
-if ! sudo test -d "\${VOL}"; then
-  echo "❌ \${VOL} does not exist — the n8n volume is not where this script expects it"
-  exit 1
-fi
-
-# Replace the directory rather than extract over it. The custom loader globs **/*.node.js recursively and
-# never reads package.json, so a file left behind by an earlier version goes on being loaded, under its old
-# name, with nothing to indicate that it is stale.
-sudo rm -rf "\${DEST}"
-sudo mkdir -p "\${DEST}"
-
-# --strip-components=1 drops the package/ directory npm pack puts at the root of the archive.
-sudo tar -xzf "/tmp/${TARBALL}" -C "\${DEST}" --strip-components=1
-
-# node inside the container and debian on the host share uid 1000, so this is what the container sees.
-sudo chown -R 1000:1000 "\${VOL}/custom"
-rm -f "/tmp/${TARBALL}"
-
-if ! sudo test -f "\${DEST}/dist/nodes/Sdp/Sdp.node.js"; then
-  echo "❌ Sdp.node.js is missing from \${DEST} after extraction"
-  exit 1
-fi
-echo "✅ extracted \$(sudo find "\${DEST}" -type f | wc -l) files"
-
-# Custom directories are read at startup only, so the restart is not optional.
-echo "➡️ Restarting ${CONTAINER}"
-sudo docker restart "${CONTAINER}" >/dev/null
-
-for i in \$(seq 1 30); do
-  code=\$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:5678/healthz || true)
-  if [ "\${code}" = "200" ]; then
-    echo "✅ n8n healthy after \${i} attempt(s)"
-    break
-  fi
-  if [ "\${i}" = "30" ]; then
-    echo "❌ n8n did not answer /healthz within 30 attempts; last status \${code}"
-    sudo docker logs --tail 40 "${CONTAINER}"
-    exit 1
-  fi
-  sleep 2
-done
-
-# A node that fails to load is reported in the log and nowhere else: n8n starts normally, and the node is
-# simply absent from the editor.
-if sudo docker logs --since 2m "${CONTAINER}" 2>&1 | grep -iE 'error loading|failed to load|cannot find module'; then
-  echo "❌ n8n logged a loading error since the restart"
-  exit 1
-fi
-REMOTE
+# No arguments: sudoers allows this command and only this command, with none. The installer validates the
+# archive, replaces the directory, restarts the container and reports — its output is this step's output.
+echo "➡️ Running ${INSTALLER}"
+ssh "${SSH_OPTS[@]}" "${TARGET}" "sudo ${INSTALLER}"
 
 echo "✅ n8n-nodes-sdp ${VERSION} installed on ${HOST}"
-echo "   A node placed in custom/ does not show up under Settings → Community nodes: that page only lists"
-echo "   what the interface installed, in ~/.n8n/nodes. Check it from the canvas — press Tab, search SDP."
