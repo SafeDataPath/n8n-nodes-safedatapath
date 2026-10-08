@@ -5,3 +5,5 @@ dist/
 .DS_Store
 # npm pack, and test/integration/ci.sh, leave the tarball here
 *.tgz
+# written by test/integration/ci.sh, read by the build's JUnit report watcher
+integration-results.xml

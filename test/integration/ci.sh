@@ -183,3 +183,74 @@ echo "➡️ Running ${INSTALLER}"
 ssh "${SSH_OPTS[@]}" "${TARGET}" "sudo ${INSTALLER}"
 
 echo "✅ n8n-nodes-sdp ${VERSION} installed on ${HOST}"
+
+# -------------------------------------------------------------------------------------------------------
+# 4. Ask n8n whether it actually loaded any of it
+# -------------------------------------------------------------------------------------------------------
+
+# Files in the right directory are not the same thing as a node n8n knows about, and until now the build
+# could not tell the two apart. n8n's public API has no endpoint listing node types, and creating a
+# workflow proves nothing — it accepts a node type that does not exist. What does discriminate is the
+# credential schema: /credentials/schema/<type> answers 200 only for a type the instance has loaded, and
+# 404 otherwise. Our package ships SdpApi.credentials.js beside Sdp.node.js, so this exercises the loader
+# on the directory the installer just replaced. The control case below is what makes it a test rather than
+# a reflex: an endpoint that answered 200 to everything would prove nothing.
+API_URL="${N8N_URL:-https://${HOST}}"
+REPORT="${PKG_DIR}/integration-results.xml"
+
+emit_report() {
+  # The build configuration watches n8n-nodes-sdp/integration-results.xml. Writing it here is what turns a
+  # green step into a reported test.
+  printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' "$1" > "${REPORT}"
+  echo "ℹ️ report written to ${REPORT}"
+}
+
+if [ -z "${N8N_API_KEY:-}" ]; then
+  echo "⚠️ N8N_API_KEY is not set — the node was installed but nothing checked it."
+  emit_report '<testsuite name="n8n-nodes-sdp integration" tests="1" failures="0" errors="0" skipped="1">
+  <testcase classname="n8n.deployment" name="sdp credential type is loaded">
+    <skipped message="N8N_API_KEY is not set"/>
+  </testcase>
+</testsuite>'
+  exit 0
+fi
+
+probe() { curl -s -o /dev/null -w '%{http_code}' --max-time 20 -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
+            "${API_URL}/api/v1/credentials/schema/$1"; }
+
+echo "➡️ Asking ${API_URL} which credential types it knows"
+LOADED=$(probe sdpApi)
+CONTROL=$(probe n8nNodesSdpControlCaseThatMustNotExist)
+echo "   sdpApi -> ${LOADED}, control -> ${CONTROL}"
+
+FAILS=0
+CASES=""
+if [ "${LOADED}" = "200" ]; then
+  CASES="${CASES}  <testcase classname=\"n8n.deployment\" name=\"sdp credential type is loaded\"/>
+"
+else
+  FAILS=$((FAILS + 1))
+  CASES="${CASES}  <testcase classname=\"n8n.deployment\" name=\"sdp credential type is loaded\">
+    <failure message=\"expected 200 from /credentials/schema/sdpApi, got ${LOADED}\"/>
+  </testcase>
+"
+fi
+if [ "${CONTROL}" = "404" ]; then
+  CASES="${CASES}  <testcase classname=\"n8n.deployment\" name=\"unknown credential type is rejected\"/>
+"
+else
+  FAILS=$((FAILS + 1))
+  CASES="${CASES}  <testcase classname=\"n8n.deployment\" name=\"unknown credential type is rejected\">
+    <failure message=\"expected 404 for a type that does not exist, got ${CONTROL} — this endpoint is not discriminating, so the check above proves nothing\"/>
+  </testcase>
+"
+fi
+
+emit_report "<testsuite name=\"n8n-nodes-sdp integration\" tests=\"2\" failures=\"${FAILS}\" errors=\"0\">
+${CASES}</testsuite>"
+
+if [ "${FAILS}" -ne 0 ]; then
+  echo "❌ n8n does not report the node as loaded"
+  exit 1
+fi
+echo "✅ n8n reports the SDP credential type as loaded, and rejects one that does not exist"
