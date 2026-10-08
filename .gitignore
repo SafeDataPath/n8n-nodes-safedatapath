@@ -3,3 +3,5 @@ dist/
 *.tsbuildinfo
 .env
 .DS_Store
+# npm pack, and test/integration/ci.sh, leave the tarball here
+*.tgz
