@@ -27,7 +27,8 @@ and self-hosted alike. For a local or test SDP, set the address on the n8n insta
 CREDENTIALS_OVERWRITE_DATA={"sdpOAuth2Api":{"baseUrl":"http://localhost:8081"}}
 ```
 
-This needs the SDP OAuth2 server of FCT-1628; until it ships, Connect fails.
+This needs the SDP OAuth2 server of FCT-1628. Until it ships, Connect opens the SDP trial entry flow
+(`/trial?entry=n8n`), where the visitor signs in or creates an account, but no token comes back to n8n.
 
 **API Key (Machine User)**: create an **SDP API** credential:
 

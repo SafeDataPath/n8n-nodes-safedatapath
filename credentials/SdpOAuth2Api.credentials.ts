@@ -2,8 +2,8 @@ import type { ICredentialType, Icon, INodeProperties } from 'n8n-workflow';
 
 // FCT-1676. Connect to SDP with OAuth2 (PKCE), the way HubSpot's OAuth2 credential works. Every field is
 // hidden, so n8n shows its "Connect to SDP" button straight in the node. The SDP side (authorize and
-// token endpoints, the public "n8n" client) is FCT-1628; until it ships, Connect opens /oauth/authorize
-// and fails.
+// token endpoints, the public "n8n" client) is FCT-1628. Until it ships, Connect opens the SDP trial
+// entry flow (/trial?entry=n8n) so the visitor can sign in or create an account; no token comes back yet.
 export class SdpOAuth2Api implements ICredentialType {
 	name = 'sdpOAuth2Api';
 
@@ -41,7 +41,7 @@ export class SdpOAuth2Api implements ICredentialType {
 			displayName: 'Authorization URL',
 			name: 'authUrl',
 			type: 'hidden',
-			default: '={{$self["baseUrl"].replace(/\\/+$/, "")}}/oauth/authorize',
+			default: '={{$self["baseUrl"].replace(/\\/+$/, "")}}/trial',
 			required: true,
 		},
 		{
@@ -75,7 +75,8 @@ export class SdpOAuth2Api implements ICredentialType {
 			displayName: 'Auth URI Query Parameters',
 			name: 'authQueryParameters',
 			type: 'hidden',
-			default: '',
+			// The trial flow reads its n8n skin from it. Kept out of authUrl: n8n adds its own query to that URL.
+			default: 'entry=n8n',
 		},
 		{
 			displayName: 'Authentication',
