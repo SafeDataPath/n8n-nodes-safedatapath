@@ -49,6 +49,28 @@ interface BinaryDigest extends IDataObject {
 	fileTransferId?: string;
 }
 
+// FCT-1676. The credential each Authentication option signs in with.
+const CREDENTIAL_BY_AUTHENTICATION: Record<string, string> = {
+	apiKey: 'sdpApi',
+	oAuth2: 'sdpOAuth2Api',
+};
+
+// OAuth2 first on purpose: it is the one-click way, decided on FCT-1676.
+const AUTHENTICATION_OPTIONS: INodePropertyOptions[] = [
+	{ name: 'OAuth2 (SDP, Microsoft or Google)', value: 'oAuth2' },
+	{ name: 'API Key (Machine User)', value: 'apiKey' },
+];
+
+/** The credential of the Authentication option chosen on this node. API Key for a node saved before it existed. */
+function sdpCredentialName(ctx: IExecuteFunctions): string {
+	const authentication = ctx.getNodeParameter('authentication', 0, 'apiKey') as string;
+	const credentialName = CREDENTIAL_BY_AUTHENTICATION[authentication];
+	if (!credentialName) {
+		throw new NodeOperationError(ctx.getNode(), `Unknown SDP authentication option: ${authentication}`);
+	}
+	return credentialName;
+}
+
 /**
  * Uploads one file to SDP via the same chunked endpoint the file-upload UI uses, and returns the transfer id
  * to pass to /api/n8n/capture. Chunking (rather than one request) keeps large files from needing the whole
@@ -85,7 +107,7 @@ async function uploadFile(
 			// as JSON would fail on an unquoted string.
 			json: false,
 		};
-		transferId = (await ctx.helpers.httpRequestWithAuthentication.call(ctx, 'sdpApi', options)) as string;
+		transferId = (await ctx.helpers.httpRequestWithAuthentication.call(ctx, sdpCredentialName(ctx), options)) as string;
 	}
 	// The endpoint answers with a bare transfer id (a UUID). Anything else means the request did not reach it -
 	// most likely SDP's SPA catch-all returning index.html with a 200, which would otherwise travel on as a
@@ -246,7 +268,10 @@ export class Sdp implements INodeType {
 		name: 'sdp',
 		icon: { light: 'file:SDP_LOGO.png', dark: 'file:sdp_logo_2.png' },
 		group: ['transform'],
-		version: 1,
+		// FCT-1676. Version 2 only changes the Authentication default to OAuth2. A node saved as version 1
+		// keeps API Key, so an existing workflow keeps its credential.
+		version: [1, 2],
+		defaultVersion: 2,
 		subtitle: 'Capture this run in SDP',
 		description:
 			'Register this workflow run in SafeDataPath (SDP) as a cryptographically verifiable pipeline - including AI prompts, model and token usage. SDP captures the run once it finishes.',
@@ -254,8 +279,30 @@ export class Sdp implements INodeType {
 		usableAsTool: true,
 		inputs: [NodeConnectionTypes.Main],
 		outputs: [NodeConnectionTypes.Main],
-		credentials: [{ name: 'sdpApi', required: true }],
+		// FCT-1676. One credential per Authentication option: n8n then shows its "Setup credential" dropdown.
+		credentials: [
+			{ name: 'sdpApi', required: true, displayOptions: { show: { authentication: ['apiKey'] } } },
+			{ name: 'sdpOAuth2Api', required: true, displayOptions: { show: { authentication: ['oAuth2'] } } },
+		],
 		properties: [
+			{
+				displayName: 'Authentication',
+				name: 'authentication',
+				type: 'options',
+				options: AUTHENTICATION_OPTIONS,
+				// API Key, so a workflow saved before this option existed keeps its credential.
+				default: 'apiKey',
+				displayOptions: { show: { '@version': [1] } },
+			},
+			{
+				displayName: 'Authentication',
+				name: 'authentication',
+				type: 'options',
+				options: AUTHENTICATION_OPTIONS,
+				// OAuth2, so a new node opens on n8n's "Connect to SDP" button.
+				default: 'oAuth2',
+				displayOptions: { show: { '@version': [2] } },
+			},
 			{
 				displayName:
 					'This node can sit <b>anywhere</b> in your workflow: it only asks SDP to capture the run, and SDP waits for the run to finish before fetching it from n8n. The pipeline therefore appears a few seconds after the run ends, not when this node executes. '
@@ -401,7 +448,7 @@ export class Sdp implements INodeType {
 			const executionId = this.getNodeParameter('executionId', 0) as string;
 			const callbackUrl = (this.getNodeParameter('callbackUrl', 0, '') as string).trim();
 
-			const credentials = await this.getCredentials('sdpApi');
+			const credentials = await this.getCredentials(sdpCredentialName(this));
 			baseUrl = (credentials.baseUrl as string).replace(/\/+$/, '');
 
 			const body: IDataObject = { executionId };
@@ -447,7 +494,7 @@ export class Sdp implements INodeType {
 
 			// Fire-and-forget: SDP registers the run once n8n reports it finished (the current run is still
 			// in progress while this node executes, so capture cannot be synchronous).
-			await this.helpers.httpRequestWithAuthentication.call(this, 'sdpApi', options);
+			await this.helpers.httpRequestWithAuthentication.call(this, sdpCredentialName(this), options);
 
 			const result: IDataObject = {
 				sdp: 'capture requested',
