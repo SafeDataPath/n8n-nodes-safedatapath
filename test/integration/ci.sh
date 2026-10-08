@@ -219,9 +219,25 @@ probe() { curl -s -o /dev/null -w '%{http_code}' --max-time 20 -H "X-N8N-API-KEY
             "${API_URL}/api/v1/credentials/schema/$1"; }
 
 echo "➡️ Asking ${API_URL} which credential types it knows"
-LOADED=$(probe sdpApi)
+
+# /healthz answers 200 before n8n has finished scanning the custom directory, and so does
+# /healthz/readiness — measured on build 6523, which got 404 one second after the installer reported the
+# container healthy, then 200 a few minutes later. Neither endpoint is a signal that the nodes are loaded,
+# so the only honest way to wait is to keep asking the question. A node that never loads still fails, it
+# just takes a minute to say so.
+LOADED=000
+for attempt in $(seq 1 30); do
+  LOADED=$(probe sdpApi)
+  if [ "${LOADED}" = "200" ]; then
+    echo "   sdpApi -> 200 after ${attempt} attempt(s)"
+    break
+  fi
+  sleep 2
+done
+[ "${LOADED}" = "200" ] || echo "   sdpApi -> ${LOADED} after 30 attempts"
+
 CONTROL=$(probe n8nNodesSdpControlCaseThatMustNotExist)
-echo "   sdpApi -> ${LOADED}, control -> ${CONTROL}"
+echo "   control -> ${CONTROL}"
 
 FAILS=0
 CASES=""
