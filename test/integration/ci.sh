@@ -16,6 +16,7 @@
 #   - N8N_DEPLOY           "true" to install; anything else builds and packs only
 #   - N8N_DEPLOY_KEY       the deploy-n8n private key, as a secure build parameter
 #   - N8N_DEPLOY_HOST_KEY  the server's public host keys, known_hosts lines, as a build parameter
+#   - SDP_URL              optional, the SDP root the credentials point at (default https://n8n.safedatapath.eu)
 #
 # Build and pack always run. Installing is opt-in because this configuration builds every branch
 # (+:refs/heads/*) while there is a single n8n instance: without the guard, whichever branch built last
@@ -110,6 +111,27 @@ for f in dist/nodes/Sdp/Sdp.node.js dist/credentials/SdpApi.credentials.js; do
     exit 1
   fi
 done
+
+# The credentials point at https://n8n.safedatapath.eu. SDP_URL points them at another SDP (a test one).
+# It must be the SDP root: the OAuth2 credential adds /trial itself.
+SDP_URL="${SDP_URL:-}"
+if [ -n "${SDP_URL}" ]; then
+  SDP_URL="${SDP_URL%/}"
+  if ! [[ "${SDP_URL}" =~ ^https?://[A-Za-z0-9.-]+(:[0-9]+)?$ ]]; then
+    echo "❌ SDP_URL must be the SDP root, like https://sdp.example.com, not \"${SDP_URL}\""
+    exit 1
+  fi
+  echo "➡️ Pointing the SDP credentials at ${SDP_URL}"
+  SDP_URL="${SDP_URL}" node -e '
+    const fs = require("fs");
+    const from = "default: '"'"'https://n8n.safedatapath.eu'"'"'";
+    const to = "default: '"'"'" + process.env.SDP_URL + "'"'"'";
+    for (const f of ["dist/credentials/SdpApi.credentials.js", "dist/credentials/SdpOAuth2Api.credentials.js"]) {
+      const s = fs.readFileSync(f, "utf8");
+      if (s.split(from).length !== 2) { console.error("❌ Expected one default URL in " + f); process.exit(1); }
+      fs.writeFileSync(f, s.replace(from, to));
+    }'
+fi
 
 echo "➡️ Packing"
 rm -f ./*.tgz
