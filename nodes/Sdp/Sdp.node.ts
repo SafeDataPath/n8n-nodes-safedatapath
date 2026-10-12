@@ -306,8 +306,9 @@ export class Sdp implements INodeType {
 			{
 				displayName:
 					'This node can sit <b>anywhere</b> in your workflow: it only asks SDP to capture the run, and SDP waits for the run to finish before fetching it from n8n. The pipeline therefore appears a few seconds after the run ends, not when this node executes. '
-					+ 'In a branching workflow, placing it <b>first</b> is the safer choice - a node at the end of one branch is skipped whenever another branch runs. '
-					+ 'The one trade-off: file fingerprinting below only covers files that actually reach this node, so a node placed first will not fingerprint anything.',
+					+ 'Its output is a capture status, not the data it received, so place it on a <b>side branch</b> (a second wire out of the node before it), never in line between two nodes. '
+					+ 'Several SDP nodes in one workflow are fine: each run gives one product, and every SDP node that runs adds the files it fingerprints and its callback URL to it. A useful pattern is one SDP node at the end of each branch. '
+					+ 'File fingerprinting below only covers files that actually reach this node.',
 				name: 'notice',
 				type: 'notice',
 				default: '',

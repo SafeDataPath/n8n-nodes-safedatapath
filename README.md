@@ -55,6 +55,19 @@ Step Name, Step Type, Hash Algorithm (SHA-256 / SHA-512), Hash Encoding (Hex / B
 > output of every other node. For whole-workflow, zero-touch capture of every node's I/O, use SDP's
 > server-side polling integration instead.
 
+### Where to place the node, and how many
+
+The node outputs a capture status, not the data it received. Put it on a **side branch**: a second wire
+out of the node before it, never in line between two nodes, or the rest of the workflow gets the status
+instead of its data.
+
+**Several SDP nodes in one workflow** are fine (FCT-1652). Every run gives **one** product in SDP,
+whatever the number of SDP nodes. Each SDP node that runs adds to it the files it fingerprints and its
+callback URL, and each SDP node is a step of the product. A file fingerprinted by two SDP nodes counts
+once. One SDP node at the end of each branch of an IF is a good pattern: whichever branch runs is
+captured. An SDP node inside a sub-workflow adds its files to the sub-workflow's own product, linked
+under the parent.
+
 ## Nothing arrives in SDP
 
 The node only tells SDP which execution to capture. SDP then reads the execution back from n8n, so
