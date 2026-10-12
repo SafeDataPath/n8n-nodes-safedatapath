@@ -82,6 +82,10 @@ SDP needs three things of its own. Check them in this order:
 3. **SDP holds an n8n API key** for the tenant, saved on the SDP Secret page, and that key may read
    the executions and workflows of this n8n user.
 
+SDP captures the run once it is over, read every 15 seconds. A run still not over after 7 days, or
+canceled in n8n, gives a product in error that says why, not nothing. A run still running is not
+an error: its product only appears when it ends.
+
 The SDP log says which one is missing. Search it for `n8n capture:`. To test point 2 and 3 from the
 SDP server, with the id of a finished execution:
 
