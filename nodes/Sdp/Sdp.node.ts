@@ -307,8 +307,8 @@ export class Sdp implements INodeType {
 				displayName:
 					'This node can sit <b>anywhere</b> in your workflow: it only asks SDP to capture the run, and SDP waits for the run to finish before fetching it from n8n. The pipeline therefore appears a few seconds after the run ends, not when this node executes. '
 					+ 'Its output is a capture status, not the data it received, so place it on a <b>side branch</b> (a second wire out of the node before it), never in line between two nodes. '
-					+ 'Several SDP nodes in one workflow are fine: each run gives one product, and every SDP node that runs adds the files it fingerprints and its callback URL to it. A useful pattern is one SDP node at the end of each branch. '
-					+ 'File fingerprinting below only covers files that actually reach this node.',
+					+ 'Several SDP nodes in one workflow are fine: each run gives one product, and every SDP node that runs adds the files it fingerprints to it. A useful pattern is one SDP node at the end of each branch. '
+					+ 'Files that reach this node are fingerprinted: only their SHA-512 is sent, the files stay in n8n.',
 				name: 'notice',
 				type: 'notice',
 				default: '',
@@ -320,82 +320,6 @@ export class Sdp implements INodeType {
 				default: '={{ $execution.id }}',
 				required: true,
 				description: 'The n8n execution SDP should capture. Defaults to the current run.',
-			},
-			{
-				displayName: 'Fingerprint Files Reaching This Node',
-				name: 'hashBinaryFiles',
-				type: 'boolean',
-				default: true,
-				description:
-					'Whether to compute a SHA-512 of every file (PDF, image, audio, CSV…) arriving at this node and '
-					+ 'register only that digest. The file itself never leaves your n8n instance. Turn this off if the '
-					+ 'upstream node produces very large files and you do not need them fingerprinted.',
-			},
-			{
-				displayName: 'Upload Files to SDP (Keep Original)',
-				name: 'uploadBinaryFiles',
-				type: 'boolean',
-				default: false,
-				displayOptions: { show: { hashBinaryFiles: [true] } },
-				description:
-					'Whether to also upload each file to SDP\'s own storage, so it can be downloaded later from '
-					+ 'SDP - not just verified against a hash. Off by default: SDP then becomes a holder of the file, '
-					+ 'not only of its fingerprint. This decision is locked in the first time a node\'s schema is '
-					+ 'created - turning it on for a node whose schema already exists (from an earlier run with this '
-					+ 'off) verifies the hash but does not retroactively start keeping the file; that needs a '
-					+ 'structural change to the workflow so a new schema version is created with this on.',
-			},
-			{
-				displayName: 'Files To Fingerprint',
-				name: 'fileSources',
-				type: 'options',
-				default: 'input',
-				displayOptions: { show: { hashBinaryFiles: [true] } },
-				// Alphabetical, as the n8n community-node linter requires; 'input' stays the default.
-				options: [
-					{
-						name: 'Both',
-						value: 'both',
-						description: 'The files reaching this node, plus the output of the nodes named below',
-					},
-					{
-						name: 'Files From Named Nodes',
-						value: 'nodes',
-						description: 'Read the output of nodes named below, with no connection to this node',
-					},
-					{
-						name: 'Files Reaching This Node',
-						value: 'input',
-						description: 'Only the files carried by the connections wired into this node',
-					},
-				],
-				description:
-					'Where the files to fingerprint come from. Naming nodes avoids wiring every file-producing '
-					+ 'node into this one, which is what makes a real workflow unreadable - the files are read '
-					+ 'straight from those nodes\' output instead.',
-			},
-			{
-				displayName: 'Source Node Names or IDs',
-				name: 'sourceNodeNames',
-				type: 'multiOptions',
-				typeOptions: { loadOptionsMethod: 'getSelectableNodes' },
-				default: [],
-				displayOptions: { show: { hashBinaryFiles: [true], fileSources: ['nodes', 'both'] } },
-				// Deliberately ONE string literal rather than a concatenation: the n8n lint rule reads the
-				// description through an AST getter that only recognises a plain literal, so a concatenated
-				// description reads as absent and the autofixer inserts a second, duplicate `description` key.
-				description: 'The nodes whose files to fingerprint. The list comes from the workflow graph, so every other node is selectable straight away, with nothing executed yet. What ordering costs is a runtime matter, not a selection one: a node that has not run by the time this one executes produced nothing, and is reported under unresolvedSourceNodes instead of failing the run. Choose from the list, or specify IDs using an <a href="https://docs.n8n.io/code/expressions/">expression</a>',
-			},
-			{
-				displayName: 'Verify URL Webhook',
-				name: 'callbackUrl',
-				type: 'string',
-				default: '',
-				placeholder: 'https://n8n.example.com/webhook/sdp-verify',
-				description:
-					'Optional. An n8n Webhook URL (in a separate workflow). Once SDP registers the pipeline, it POSTs '
-					+ '{ executionId, pipelineUuid, verifyUrl } here - so the Verify link is pushed back to n8n instead '
-					+ 'of being polled. Leave empty to skip.',
 			},
 		],
 	};
