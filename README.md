@@ -14,10 +14,10 @@ then install `n8n-nodes-sdp` from **Settings → Community Nodes**.
 
 ## Credentials
 
-In the SDP node, **Authentication** picks how the node signs in to SDP. n8n then shows its
+In the **SafeDataPath** node, **Authentication** picks how the node signs in to SafeDataPath. n8n then shows its
 **Setup credential** dropdown with both options (FCT-1676).
 
-**OAuth2 (SDP, Microsoft or Google)**, the default for a new node: click **Connect to SDP** in the
+**OAuth2 (SafeDataPath, Microsoft or Google)**, the default for a new node: click **Connect to SDP** in the
 node, then sign in to SDP with a password, a Microsoft or a Google account and approve. There is
 nothing to fill in: the SDP address `https://n8n.safedatapath.eu`, PKCE, the public client `n8n` and
 the empty client secret are all fixed. That is what makes n8n show its one-click button, on n8n Cloud
@@ -30,7 +30,7 @@ CREDENTIALS_OVERWRITE_DATA={"sdpOAuth2Api":{"baseUrl":"http://localhost:8081"}}
 This needs the SDP OAuth2 server of FCT-1628. Until it ships, Connect opens the SDP trial entry flow
 (`/trial?entry=n8n`), where the visitor signs in or creates an account, but no token comes back to n8n.
 
-**API Key (Machine User)**: create an **SDP API** credential:
+**API Key (Machine User)**: create a **SafeDataPath API** credential:
 
 - **Base URL**: already set to `https://n8n.safedatapath.eu`. Change it only for another SDP instance (no trailing slash).
 - **API Key**: an SDP machine-user token holding the `PIPELINE_INSERT` permission.
@@ -40,41 +40,33 @@ The key is sent as `Authorization: Bearer <apiKey>`.
 The node is at version 2. Version 2 only moves the Authentication default to OAuth2. A node saved
 as version 1, before the OAuth2 option existed, stays on API Key and keeps working unchanged.
 
-## Operations
+## The node
 
-### Register Execution (auto-schema)
+The node is called **SafeDataPath** in n8n (internal name `sdp`). Search the node picker for
+SafeDataPath, SDP, provenance, audit trail, proof, timestamp and the like. Its panel holds the
+credential and one notice, nothing else.
 
-Hashes the data passing **through this node** and registers it as an SDP pipeline by calling
-`POST /api/pipeline/register-from-execution`. On the first run for a given workflow, SDP auto-models
-the pipeline schema (`wf-<workflowId>`); subsequent runs reuse it.
+**Place it first in your workflow.** When it runs, it asks SafeDataPath to record the run, sends the
+SHA-512 of every file that reaches it (the files stay in n8n), and hands its input items on unchanged,
+so the next nodes get the trigger data. SafeDataPath records the run once it finishes: the record
+appears a few seconds after the run ends.
 
-Parameters: Workflow ID (`{{ $workflow.id }}`), Workflow Name, Execution ID (`{{ $execution.id }}`),
-Step Name, Step Type, Hash Algorithm (SHA-256 / SHA-512), Hash Encoding (Hex / Base64).
+**One node per workflow.** n8n lets you add it once (`maxNodes: 1`): one run gives one record.
 
-> **Capture scope:** a node placed in a workflow only sees the data that flows **through it**, not the
-> output of every other node. For whole-workflow, zero-touch capture of every node's I/O, use SDP's
-> server-side polling integration instead.
-
-### Where to place the node, and how many
-
-The node outputs a capture status, not the data it received. Put it on a **side branch**: a second wire
-out of the node before it, never in line between two nodes, or the rest of the workflow gets the status
-instead of its data.
-
-**Several SDP nodes in one workflow** are fine (FCT-1652). Every run gives **one** product in SDP,
-whatever the number of SDP nodes. Each SDP node that runs adds to it the files it fingerprints and its
-callback URL, and each SDP node is a step of the product. A file fingerprinted by two SDP nodes counts
-once. One SDP node at the end of each branch of an IF is a good pattern: whichever branch runs is
-captured. An SDP node inside a sub-workflow adds its files to the sub-workflow's own product, linked
-under the parent.
+**It never stops your workflow** (FCT-1746). The request times out after 10 seconds and is tried up to
+3 times, 1 then 2 seconds apart, in the node itself (not n8n's Retry On Fail). If it still fails, the
+node logs `SafeDataPath: run <execution id> not recorded ...` in the n8n log and the workflow carries on.
+Only a manual run with no credential, or a credential SafeDataPath refuses, stops with a clear message,
+so you see it while testing.
 
 ## Nothing arrives in SDP
 
 The node only tells SDP which execution to capture. SDP then reads the execution back from n8n, so
 SDP needs three things of its own. Check them in this order:
 
-1. **The node is green in n8n.** A 401 or 403 on the node means the SDP API key of the credential is
-   wrong or lacks `PIPELINE_INSERT`.
+1. **The request reached SafeDataPath.** The node never turns red in a production run: search the
+   n8n log for `SafeDataPath: run <execution id> not recorded`. An HTTP 401 or 403 there means the
+   credential's key is wrong or lacks `PIPELINE_INSERT`; a manual run shows it on the node.
 2. **SDP knows where n8n is.** On the SDP server, `sdp.n8n.base-url` must be the root address of this
    n8n instance, for example `https://n8n.example.com`, with no path. The address shown in the browser
    (`.../home/workflows`) does not work. When the key is not set at all, SDP calls the Factiven n8n

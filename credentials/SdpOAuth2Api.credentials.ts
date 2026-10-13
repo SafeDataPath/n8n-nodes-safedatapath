@@ -9,7 +9,7 @@ export class SdpOAuth2Api implements ICredentialType {
 
 	extends = ['oAuth2Api'];
 
-	displayName = 'SDP OAuth2 API';
+	displayName = 'SafeDataPath OAuth2 API';
 
 	documentationUrl = 'https://safedatapath.io';
 

@@ -2,41 +2,31 @@ import { createHash } from 'crypto';
 import {
 	NodeConnectionTypes,
 	NodeOperationError,
-	type IBinaryData,
+	sleep,
 	type IDataObject,
 	type IExecuteFunctions,
 	type IHttpRequestOptions,
-	type ILoadOptionsFunctions,
 	type INodeExecutionData,
 	type INodePropertyOptions,
 	type INodeType,
 	type INodeTypeDescription,
-	type NodeTypeAndVersion,
 } from 'n8n-workflow';
 
-// Every SDP endpoint lives under /api. Omitting that prefix does NOT fail loudly: the request falls through
-// to SDP's single-page-app catch-all route, which answers 200 with index.html - so the caller happily treats a
-// page of HTML as its response body. Hence the shared prefix rather than two independently written paths.
-const API_PREFIX = '/api';
-const CAPTURE_PATH = `${API_PREFIX}/n8n/capture`;
-const UPLOAD_CHUNK_PATH = `${API_PREFIX}/pipeline/upload-chunk`;
+// Every SafeDataPath endpoint lives under /api. Without the prefix the request falls through to the
+// single-page-app catch-all, which answers 200 with index.html: a "success" that captured nothing.
+const CAPTURE_PATH = '/api/n8n/capture';
 
-/** Must stay SHA-512/base64: that is the pair SDP's HashValidator accepts (88 chars for 512 bits). */
+/** Must stay SHA-512/base64: that is the pair SafeDataPath's HashValidator accepts. */
 const HASH_ALGORITHM = 'sha512';
 const HASH_ENCODING = 'base64';
 
-// /pipeline/upload-chunk verifies the assembled file against a SHA-512 HEX digest (its own doc comment says
-// SHA-256; the server code computes SHA-512 - verified by reading SdpUtils.uploadChunk, not the doc comment).
-const UPLOAD_HASH_ENCODING = 'hex';
-// Balances round-trips against per-request memory/latency; SDP places no documented limit on this endpoint.
-const UPLOAD_CHUNK_SIZE_BYTES = 4 * 1024 * 1024;
+// FCT-1746: a capture never holds the workflow for long, and a short outage gets two more chances.
+const REQUEST_TIMEOUT_MS = 10_000;
+const RETRY_DELAYS_MS = [1_000, 2_000];
 
-/**
- * One file reaching this node. The hash is always computed. `fileTransferId` is set only when upload mode is
- * on - the file's bytes then travel to SDP's own storage too, not just its digest.
- */
+/** One file reaching this node: only its digest travels, the file stays in n8n. */
 interface BinaryDigest extends IDataObject {
-	/** The node that produced the file — this is what ties the digest to the right trace in SDP. */
+	/** The node that produced the file: it ties the digest to the right trace. */
 	nodeName: string;
 	itemIndex: number;
 	property: string;
@@ -46,7 +36,6 @@ interface BinaryDigest extends IDataObject {
 	algorithm: string;
 	encoding: string;
 	hash: string;
-	fileTransferId?: string;
 }
 
 // FCT-1676. The credential each Authentication option signs in with.
@@ -57,95 +46,56 @@ const CREDENTIAL_BY_AUTHENTICATION: Record<string, string> = {
 
 // OAuth2 first on purpose: it is the one-click way, decided on FCT-1676.
 const AUTHENTICATION_OPTIONS: INodePropertyOptions[] = [
-	{ name: 'OAuth2 (SDP, Microsoft or Google)', value: 'oAuth2' },
+	{ name: 'OAuth2 (SafeDataPath, Microsoft or Google)', value: 'oAuth2' },
 	{ name: 'API Key (Machine User)', value: 'apiKey' },
 ];
 
+/** Search terms of the node picker (FCT-1746). n8n reads them from description.codex. */
+const SEARCH_ALIASES = [
+	'SDP',
+	'Safe Data Path',
+	'Factiven',
+	'traceability',
+	'provenance',
+	'data provenance',
+	'audit',
+	'audit trail',
+	'data lineage',
+	'proof',
+	'evidence',
+	'chain of custody',
+	'verification',
+	'certificate',
+	'timestamp',
+	'fingerprint',
+	'hash',
+	'tamper evident',
+	'compliance',
+	'eIDAS',
+	'RFC 3161',
+];
+
 /** The credential of the Authentication option chosen on this node. API Key for a node saved before it existed. */
-function sdpCredentialName(ctx: IExecuteFunctions): string {
+function credentialName(ctx: IExecuteFunctions): string {
 	const authentication = ctx.getNodeParameter('authentication', 0, 'apiKey') as string;
-	const credentialName = CREDENTIAL_BY_AUTHENTICATION[authentication];
-	if (!credentialName) {
-		throw new NodeOperationError(ctx.getNode(), `Unknown SDP authentication option: ${authentication}`);
-	}
-	return credentialName;
+	return CREDENTIAL_BY_AUTHENTICATION[authentication] ?? CREDENTIAL_BY_AUTHENTICATION.apiKey;
 }
 
 /**
- * Uploads one file to SDP via the same chunked endpoint the file-upload UI uses, and returns the transfer id
- * to pass to /api/n8n/capture. Chunking (rather than one request) keeps large files from needing the whole
- * buffer held twice (once already in memory from getBinaryDataBuffer, once in the HTTP client) at request time.
- */
-async function uploadFile(
-	ctx: IExecuteFunctions,
-	baseUrl: string,
-	buffer: Buffer,
-	fileName: string,
-): Promise<string> {
-	const totalChunks = Math.max(1, Math.ceil(buffer.length / UPLOAD_CHUNK_SIZE_BYTES));
-	const fileHash = createHash(HASH_ALGORITHM).update(buffer).digest(UPLOAD_HASH_ENCODING);
-	// Empty on the first call: the server generates it and returns it for every call after (see
-	// PipelineController.pipelineUploadChunk's own parameter doc).
-	let transferId = '';
-	for (let chunkId = 1; chunkId <= totalChunks; chunkId++) {
-		const start = (chunkId - 1) * UPLOAD_CHUNK_SIZE_BYTES;
-		// Native FormData/Blob (Node >=18 globals, no import needed): community nodes may not declare their
-		// own runtime dependencies (n8n Cloud requirement), which rules out the 'form-data' package even
-		// though n8n-workflow's own HTTP types are written against it - it structurally accepts this too.
-		const formData = new FormData();
-		formData.append(
-			'fileChunk',
-			new Blob([buffer.subarray(start, start + UPLOAD_CHUNK_SIZE_BYTES)]),
-			fileName,
-		);
-		const options: IHttpRequestOptions = {
-			method: 'POST',
-			url: `${baseUrl}${UPLOAD_CHUNK_PATH}`,
-			qs: { transferId, chunkId, totalChunks, fileHash },
-			body: formData as unknown as IHttpRequestOptions['body'],
-			// The response body is the bare transferId string, not a JSON document - asking n8n to parse it
-			// as JSON would fail on an unquoted string.
-			json: false,
-		};
-		transferId = (await ctx.helpers.httpRequestWithAuthentication.call(ctx, sdpCredentialName(ctx), options)) as string;
-	}
-	// The endpoint answers with a bare transfer id (a UUID). Anything else means the request did not reach it -
-	// most likely SDP's SPA catch-all returning index.html with a 200, which would otherwise travel on as a
-	// "transfer id" and only surface much later, server-side, as an unreadable file path.
-	if (typeof transferId !== 'string' || !/^[0-9a-f-]{36}$/i.test(transferId.trim())) {
-		throw new NodeOperationError(
-			ctx.getNode(),
-			`SDP upload did not return a transfer id. Got: ${String(transferId).slice(0, 120)}`,
-			{ description: `POST ${baseUrl}${UPLOAD_CHUNK_PATH}` },
-		);
-	}
-	return transferId.trim();
-}
-
-/**
- * Fingerprints every binary property on this node's input, and optionally uploads it to SDP's own storage.
+ * Fingerprints every file on this node's input.
  * <p>
- * Why here and not server-side: SDP's capture fetches the execution from the n8n API, and for a run whose
- * binaries are held out of memory that API returns a REFERENCE, not the bytes. Inside the node is the only
- * place the raw content is reachable at all.
- * <p>
- * `getBinaryDataBuffer` is the only correct accessor. n8n stores binary either inline (base64 in
- * `binary[prop].data`) or out of memory (filesystem/S3, where `data` is empty and only `id` is set) — reading
- * `.data` directly silently yields nothing in the second mode, which is the default on real deployments.
+ * Here and not server-side: SafeDataPath reads the run back from the n8n API, which returns a reference, not
+ * the bytes, for files held out of memory. `getBinaryDataBuffer` is the only accessor that works for every
+ * storage mode (memory, filesystem, S3).
  */
-async function collectBinaryDigests(
-	ctx: IExecuteFunctions,
-	baseUrl: string,
-	uploadFiles: boolean,
-): Promise<BinaryDigest[]> {
+async function collectBinaryDigests(ctx: IExecuteFunctions): Promise<BinaryDigest[]> {
 	const items = ctx.getInputData();
 	let nodeName = '';
 	try {
 		nodeName = ctx.getInputSourceData().previousNode;
 	} catch {
-		// No source data when nothing is wired upstream: the digests still travel, unattributed.
+		// Nothing wired upstream: the digests still travel, unattributed.
 	}
-
 	const digests: BinaryDigest[] = [];
 	for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
 		const binary = items[itemIndex].binary;
@@ -153,118 +103,80 @@ async function collectBinaryDigests(
 			continue;
 		}
 		for (const property of Object.keys(binary)) {
-			// The property NAME, not the metadata object: for data on this node's own input that is the
-			// accessor n8n documents, and it resolves the item's binary through the input it arrived on.
-			digests.push(
-				await digestFromBinary(ctx, baseUrl, uploadFiles, nodeName, itemIndex, property, binary[property], property),
-			);
+			const buffer = await ctx.helpers.getBinaryDataBuffer(itemIndex, property);
+			digests.push({
+				nodeName,
+				itemIndex,
+				property,
+				fileName: binary[property].fileName,
+				mimeType: binary[property].mimeType,
+				bytes: buffer.length,
+				algorithm: HASH_ALGORITHM,
+				encoding: HASH_ENCODING,
+				hash: createHash(HASH_ALGORITHM).update(buffer).digest(HASH_ENCODING),
+			});
 		}
 	}
 	return digests;
 }
 
-/** What {@link collectDigestsFromNodes} found, plus the names it could not read anything from. */
-interface NodeSourcedDigests {
-	digests: BinaryDigest[];
-	/** Named nodes that produced no output in this run — a typo, or a branch the run never took. */
-	unresolved: string[];
+/** The HTTP status of a failed request, wherever n8n's error wrapping put it. */
+function statusOf(error: unknown): number | undefined {
+	const err = error as {
+		httpCode?: string | number;
+		statusCode?: number;
+		response?: { status?: number; statusCode?: number };
+		cause?: { statusCode?: number; response?: { status?: number; statusCode?: number } };
+	};
+	const raw =
+		err.httpCode ??
+		err.statusCode ??
+		err.response?.statusCode ??
+		err.response?.status ??
+		err.cause?.statusCode ??
+		err.cause?.response?.status ??
+		err.cause?.response?.statusCode;
+	const status = Number(raw);
+	return Number.isFinite(status) ? status : undefined;
+}
+
+/** A refused credential will be refused again: no point retrying it. */
+function isCredentialRefused(error: unknown): boolean {
+	const status = statusOf(error);
+	return status === 401 || status === 403;
+}
+
+function describe(error: unknown): string {
+	const status = statusOf(error);
+	const message = (error as { message?: string }).message ?? String(error);
+	return status ? `HTTP ${status}: ${message}` : message;
 }
 
 /**
- * Fingerprints the files produced by NAMED nodes, with no connection to this node.
- * <p>
- * Wiring every file-producing node into the SDP node is what makes a real workflow's canvas unreadable, and the
- * wires buy nothing: n8n exposes any already-executed node's output through the workflow data proxy. `$items`
- * returns that output, and `getBinaryDataBuffer` accepts a binary metadata object directly, so the bytes are
- * reachable whatever backend holds them (memory, filesystem, S3, Azure) — which matters because the storage
- * mode is not ours to choose on n8n Cloud.
- * <p>
- * The named node must have run BEFORE this one in the same execution; a node this run never reached simply has
- * no output. That is a normal outcome (an untaken branch), not a configuration error, so it is reported rather
- * than raised — but it is reported, because a silently ignored typo would leave the customer believing a file
- * was fingerprinted when it never was.
+ * Posts the capture request, up to 1 + RETRY_DELAYS_MS.length attempts. Returns the last error, or undefined
+ * once one attempt succeeds: the caller logs it, it never reaches the workflow.
  */
-async function collectDigestsFromNodes(
+async function requestCapture(
 	ctx: IExecuteFunctions,
-	baseUrl: string,
-	uploadFiles: boolean,
-	nodeNames: string[],
-): Promise<NodeSourcedDigests> {
-	const proxy = ctx.getWorkflowDataProxy(0);
-	const digests: BinaryDigest[] = [];
-	const unresolved: string[] = [];
-
-	for (const rawName of nodeNames) {
-		const nodeName = rawName.trim();
-		if (!nodeName) {
-			continue;
-		}
-		let items: INodeExecutionData[] = [];
+	credential: string,
+	options: IHttpRequestOptions,
+): Promise<unknown> {
+	for (let attempt = 0; ; attempt++) {
 		try {
-			items = proxy.$items(nodeName) ?? [];
-		} catch {
-			// $items throws on a name the workflow does not know, and on a node with no run data.
-			items = [];
-		}
-		if (items.length === 0) {
-			unresolved.push(nodeName);
-			continue;
-		}
-		for (let itemIndex = 0; itemIndex < items.length; itemIndex++) {
-			const binary = items[itemIndex].binary;
-			if (!binary) {
-				continue;
+			await ctx.helpers.httpRequestWithAuthentication.call(ctx, credential, options);
+			return undefined;
+		} catch (error) {
+			if (isCredentialRefused(error) || attempt >= RETRY_DELAYS_MS.length) {
+				return error;
 			}
-			for (const property of Object.keys(binary)) {
-				const meta = binary[property];
-				// The metadata object, not the property name: the name would be resolved against THIS node's
-				// input, which the file never travelled through.
-				digests.push(
-					await digestFromBinary(ctx, baseUrl, uploadFiles, nodeName, itemIndex, property, meta, meta),
-				);
-			}
+			await sleep(RETRY_DELAYS_MS[attempt]);
 		}
 	}
-	return { digests, unresolved };
-}
-
-/**
- * Builds one digest entry, uploading the bytes too when keep-file mode is on. `binaryRef` is how the bytes are
- * addressed - see the two call sites, which address them differently.
- */
-async function digestFromBinary(
-	ctx: IExecuteFunctions,
-	baseUrl: string,
-	uploadFiles: boolean,
-	nodeName: string,
-	itemIndex: number,
-	property: string,
-	meta: IBinaryData,
-	binaryRef: string | IBinaryData,
-): Promise<BinaryDigest> {
-	const buffer = await ctx.helpers.getBinaryDataBuffer(itemIndex, binaryRef);
-	// Fall back to a synthetic name rather than leaving it unset: SDP hangs the download of a retained
-	// file off its file_name metadata, so a nameless upload is stored but never offered for download.
-	// The SAME value is used for the upload and reported here, so the two can never disagree.
-	const fileName = meta.fileName ?? `${property}.bin`;
-	return {
-		nodeName,
-		itemIndex,
-		property,
-		fileName,
-		mimeType: meta.mimeType,
-		// The buffer's own length, not meta.fileSize: that one is a display string ("1.2 MB").
-		bytes: buffer.length,
-		algorithm: HASH_ALGORITHM,
-		encoding: HASH_ENCODING,
-		hash: createHash(HASH_ALGORITHM).update(buffer).digest(HASH_ENCODING),
-		fileTransferId: uploadFiles ? await uploadFile(ctx, baseUrl, buffer, fileName) : undefined,
-	};
 }
 
 export class Sdp implements INodeType {
 	description: INodeTypeDescription = {
-		displayName: 'SDP',
+		displayName: 'SafeDataPath',
 		name: 'sdp',
 		icon: { light: 'file:SDP_LOGO.png', dark: 'file:sdp_logo_2.png' },
 		group: ['transform'],
@@ -272,10 +184,12 @@ export class Sdp implements INodeType {
 		// keeps API Key, so an existing workflow keeps its credential.
 		version: [1, 2],
 		defaultVersion: 2,
-		subtitle: 'Capture this run in SDP',
-		description:
-			'Register this workflow run in SafeDataPath (SDP) as a cryptographically verifiable pipeline - including AI prompts, model and token usage. SDP captures the run once it finishes.',
-		defaults: { name: 'SDP' },
+		subtitle: 'Capture this run in SafeDataPath',
+		description: 'Turn every workflow run into verifiable proof',
+		defaults: { name: 'SafeDataPath' },
+		// One run, one record: a second node would only add a second request for the same run.
+		maxNodes: 1,
+		codex: { alias: SEARCH_ALIASES },
 		usableAsTool: true,
 		inputs: [NodeConnectionTypes.Main],
 		outputs: [NodeConnectionTypes.Main],
@@ -299,16 +213,13 @@ export class Sdp implements INodeType {
 				name: 'authentication',
 				type: 'options',
 				options: AUTHENTICATION_OPTIONS,
-				// OAuth2, so a new node opens on n8n's "Connect to SDP" button.
+				// OAuth2, so a new node opens on n8n's "Connect" button.
 				default: 'oAuth2',
 				displayOptions: { show: { '@version': [2] } },
 			},
 			{
 				displayName:
-					'This node can sit <b>anywhere</b> in your workflow: it only asks SDP to capture the run, and SDP waits for the run to finish before fetching it from n8n. The pipeline therefore appears a few seconds after the run ends, not when this node executes. '
-					+ 'Its output is a capture status, not the data it received, so place it on a <b>side branch</b> (a second wire out of the node before it), never in line between two nodes. '
-					+ 'Several SDP nodes in one workflow are fine: each run gives one product, and every SDP node that runs adds the files it fingerprints to it. A useful pattern is one SDP node at the end of each branch. '
-					+ 'Files that reach this node are fingerprinted: only their SHA-512 is sent, the files stay in n8n.',
+					'Place this node first in your workflow. SafeDataPath records the run once it finishes, so the record appears a few seconds after the run ends.',
 				name: 'notice',
 				type: 'notice',
 				default: '',
@@ -316,174 +227,65 @@ export class Sdp implements INodeType {
 			{
 				displayName: 'Execution ID',
 				name: 'executionId',
-				type: 'string',
+				type: 'hidden',
 				default: '={{ $execution.id }}',
-				required: true,
-				description: 'The n8n execution SDP should capture. Defaults to the current run.',
 			},
 		],
 	};
 
-	methods = {
-		loadOptions: {
-			/**
-			 * Populates the "Source Nodes" picker with the other nodes of this workflow.
-			 * <p>
-			 * `getParentNodes` and `getChildNodes` are reachable here because `ILoadOptionsFunctions` extends
-			 * `FunctionsBase`, which declares them. Both walk the workflow GRAPH (`this.workflow.nodes`), never
-			 * run data, so the list is complete as soon as the nodes sit on the canvas: choosing a source needs
-			 * no prior execution of anything.
-			 * <p>
-			 * Neither primitive returns "every node", so the set is assembled in three passes. Ancestors and
-			 * descendants come directly. A node on a PARALLEL branch is neither, yet it can perfectly well have
-			 * run before this one, so those are reached through the ancestors' own children. Listing ancestors
-			 * alone would have quietly made them unselectable.
-			 * <p>
-			 * Ordering is a runtime concern, not a selection one: a node that has not run by the time this one
-			 * executes simply produced nothing, which the execute path reports as `unresolvedSourceNodes`.
-			 * Disabled nodes are dropped, since they never produce output at all.
-			 */
-			async getSelectableNodes(this: ILoadOptionsFunctions): Promise<INodePropertyOptions[]> {
-				const self = this.getNode().name;
-				const found = new Set<string>();
-				const collect = (nodes: NodeTypeAndVersion[]) => {
-					for (const node of nodes) {
-						if (node.name !== self && !node.disabled) {
-							found.add(node.name);
-						}
-					}
-				};
-				const ancestors = this.getParentNodes(self);
-				collect(ancestors);
-				collect(this.getChildNodes(self));
-				for (const ancestor of ancestors) {
-					collect(this.getChildNodes(ancestor.name));
-				}
-				return [...found]
-					.sort((a, b) => a.localeCompare(b))
-					.map((name) => ({ name, value: name }));
-			},
-		},
-	};
-
+	/**
+	 * Asks SafeDataPath to record this run, then hands the input items on unchanged. It never stops the
+	 * workflow (FCT-1746): a failed capture is logged and the run carries on. The one exception is a manual
+	 * run with a missing or refused credential, where the person testing the node needs to see why.
+	 */
 	async execute(this: IExecuteFunctions): Promise<INodeExecutionData[][]> {
+		const items = this.getInputData();
+		const executionId = (this.getNodeParameter('executionId', 0, '') as string) || this.getExecutionId();
+		const manual = this.getMode() === 'manual';
+		const credential = credentialName(this);
+
 		let baseUrl = '';
-
 		try {
-			const executionId = this.getNodeParameter('executionId', 0) as string;
-			const callbackUrl = (this.getNodeParameter('callbackUrl', 0, '') as string).trim();
+			const credentials = await this.getCredentials(credential);
+			baseUrl = String(credentials.baseUrl ?? '').replace(/\/+$/, '');
+		} catch (error) {
+			this.logger.warn(`SafeDataPath: run ${executionId} not recorded, no credential: ${describe(error)}`);
+			if (manual && !this.continueOnFail()) {
+				throw new NodeOperationError(this.getNode(), 'Connect a SafeDataPath credential to record this run.', {
+					description: 'Open the node and choose or create a SafeDataPath credential.',
+				});
+			}
+			return [items];
+		}
 
-			const credentials = await this.getCredentials(sdpCredentialName(this));
-			baseUrl = (credentials.baseUrl as string).replace(/\/+$/, '');
-
+		let failure: unknown;
+		try {
 			const body: IDataObject = { executionId };
-			if (callbackUrl) {
-				body.callbackUrl = callbackUrl;
-			}
-
-			// Files are fingerprinted (and, if enabled, uploaded) BEFORE the capture request, so the digests
-			// travel with it: the async capture that follows reads the run from the n8n API, where the bytes
-			// are no longer reachable.
-			const hashBinaryFiles = this.getNodeParameter('hashBinaryFiles', 0, true) as boolean;
-			const uploadBinaryFiles = hashBinaryFiles && (this.getNodeParameter('uploadBinaryFiles', 0, false) as boolean);
-			const fileSources = hashBinaryFiles ? (this.getNodeParameter('fileSources', 0, 'input') as string) : 'input';
-
-			const binaryDigests: BinaryDigest[] = [];
-			if (hashBinaryFiles && fileSources !== 'nodes') {
-				binaryDigests.push(...(await collectBinaryDigests(this, baseUrl, uploadBinaryFiles)));
-			}
-			let unresolvedSourceNodes: string[] = [];
-			if (hashBinaryFiles && fileSources !== 'input') {
-				const sourceNodeNames = this.getNodeParameter('sourceNodeNames', 0, []) as string[];
-				const fromNodes = await collectDigestsFromNodes(this, baseUrl, uploadBinaryFiles, sourceNodeNames);
-				unresolvedSourceNodes = fromNodes.unresolved;
-				// In "both" mode a named node may ALSO be wired in, and hashing the same file twice would
-				// register it twice against the same trace. Node + item + property identifies it exactly.
-				const seen = new Set(binaryDigests.map((d) => `${d.nodeName}|${d.itemIndex}|${d.property}`));
-				for (const digest of fromNodes.digests) {
-					if (!seen.has(`${digest.nodeName}|${digest.itemIndex}|${digest.property}`)) {
-						binaryDigests.push(digest);
-					}
-				}
-			}
+			const binaryDigests = await collectBinaryDigests(this);
 			if (binaryDigests.length > 0) {
 				body.binaryHashes = binaryDigests;
 			}
-
-			const options: IHttpRequestOptions = {
+			failure = await requestCapture(this, credential, {
 				method: 'POST',
 				url: `${baseUrl}${CAPTURE_PATH}`,
 				body,
 				json: true,
-			};
-
-			// Fire-and-forget: SDP registers the run once n8n reports it finished (the current run is still
-			// in progress while this node executes, so capture cannot be synchronous).
-			await this.helpers.httpRequestWithAuthentication.call(this, sdpCredentialName(this), options);
-
-			const result: IDataObject = {
-				sdp: 'capture requested',
-				executionId,
-				// Surfaced so the digest is visible in n8n at run time: it is what the customer recomputes on
-				// their own copy of the file (`sha512sum -b file | xxd -r -p | base64`) to prove it is the one
-				// SDP registered.
-				filesFingerprinted: binaryDigests.length,
-				...(binaryDigests.length > 0 ? { binaryHashes: binaryDigests } : {}),
-				// Surfaced, never silent: a mistyped or renamed node name looks exactly like a successful run
-				// otherwise, and the customer would only discover the missing file when trying to verify it.
-				...(unresolvedSourceNodes.length > 0 ? { unresolvedSourceNodes } : {}),
-				// The exact /verify/<pipelineUuid> link only exists after the async ingest (the run is not finished
-				// while this node executes), so we surface the SDP instance URL: the captured pipeline - and its
-				// Verify page - appears there a few seconds after the run ends.
-				sdpUrl: baseUrl,
-				message:
-					`SDP will register this run once it finishes. Open SDP to verify the pipeline: ${baseUrl}`,
-			};
-			return [this.helpers.returnJsonArray(result)];
-		} catch (error) {
-			const err = error as {
-				message?: string;
-				httpCode?: string | number;
-				statusCode?: number;
-				code?: string;
-				description?: string;
-				response?: { statusCode?: number; status?: number; body?: unknown; data?: unknown };
-				cause?: {
-					code?: string;
-					statusCode?: number;
-					response?: { status?: number; statusCode?: number; body?: unknown; data?: unknown };
-				};
-			};
-			const status =
-				err.statusCode ??
-				err.httpCode ??
-				err.response?.statusCode ??
-				err.response?.status ??
-				err.cause?.statusCode ??
-				err.cause?.response?.status ??
-				err.cause?.response?.statusCode;
-			const responseBody =
-				err.response?.body ??
-				err.response?.data ??
-				err.cause?.response?.data ??
-				err.cause?.response?.body ??
-				err.description;
-			const parts: string[] = [];
-			if (status) parts.push(`HTTP ${status}`);
-			if (err.code ?? err.cause?.code) parts.push(String(err.code ?? err.cause?.code));
-			if (responseBody !== undefined && responseBody !== null) {
-				parts.push(typeof responseBody === 'string' ? responseBody : JSON.stringify(responseBody));
-			}
-			const detail = parts.join(' - ') || err.message || 'unknown error';
-			const targetUrl = `${baseUrl}${CAPTURE_PATH}`;
-
-			if (this.continueOnFail()) {
-				return [[{ json: { error: detail, url: targetUrl }, pairedItem: { item: 0 } }]];
-			}
-			throw new NodeOperationError(this.getNode(), error as Error, {
-				message: `SDP capture request failed: ${detail}`,
-				description: `POST ${targetUrl}`,
+				timeout: REQUEST_TIMEOUT_MS,
 			});
+		} catch (error) {
+			// Reading a file can fail too: the run still carries on.
+			failure = error;
 		}
+		if (failure !== undefined) {
+			this.logger.warn(
+				`SafeDataPath: run ${executionId} not recorded at ${baseUrl}${CAPTURE_PATH}: ${describe(failure)}`,
+			);
+			if (manual && isCredentialRefused(failure) && !this.continueOnFail()) {
+				throw new NodeOperationError(this.getNode(), 'SafeDataPath refused this credential.', {
+					description: `Reconnect the credential or check its key. ${describe(failure)}`,
+				});
+			}
+		}
+		return [items];
 	}
 }

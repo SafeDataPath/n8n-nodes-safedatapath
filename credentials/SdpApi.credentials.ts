@@ -12,7 +12,7 @@ import type {
 export class SdpApi implements ICredentialType {
 	name = 'sdpApi';
 
-	displayName = 'SDP API';
+	displayName = 'SafeDataPath API';
 
 	documentationUrl = 'https://safedatapath.io';
 
@@ -27,7 +27,7 @@ export class SdpApi implements ICredentialType {
 			// FCT-1571: the SDP instance n8n users connect to. Kept editable for a local or test SDP.
 			default: 'https://n8n.safedatapath.eu',
 			placeholder: 'https://n8n.safedatapath.eu',
-			description: 'Root URL of the SDP instance, without a trailing slash. Keep the default unless told otherwise.',
+			description: 'Root URL of the SafeDataPath instance, without a trailing slash. Keep the default unless told otherwise.',
 			required: true,
 		},
 		{
@@ -36,7 +36,7 @@ export class SdpApi implements ICredentialType {
 			type: 'string',
 			typeOptions: { password: true },
 			default: '',
-			description: 'SDP API key (machine-user token) holding the PIPELINE_INSERT permission',
+			description: 'SafeDataPath API key (machine-user token) holding the PIPELINE_INSERT permission',
 			required: true,
 		},
 	];
