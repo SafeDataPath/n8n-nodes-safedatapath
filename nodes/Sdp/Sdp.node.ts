@@ -215,7 +215,7 @@ export class Sdp implements INodeType {
 				options: AUTHENTICATION_OPTIONS,
 				// OAuth2, so a new node opens on n8n's "Connect" button.
 				default: 'oAuth2',
-				displayOptions: { show: { '@version': [0.1] } },
+				displayOptions: { show: { '@version': [2] } },
 			},
 			{
 				displayName:
