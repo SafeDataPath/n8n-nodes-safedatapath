@@ -16,7 +16,10 @@
 #   - N8N_DEPLOY           "true" to install; anything else builds and packs only
 #   - N8N_DEPLOY_KEY       the deploy-n8n private key, as a secure build parameter
 #   - N8N_DEPLOY_HOST_KEY  the server's public host keys, known_hosts lines, as a build parameter
-#   - SDP_URL              optional, the SDP root the credentials point at (default https://n8n.safedatapath.eu)
+#   - SDP_URL              optional, the SDP root the credentials point at (default https://n8n.safedatapath.eu);
+#                          required once installing, for the capture suite
+#   - N8N_API_KEY          the n8n public API key, to check the install and run the capture suite
+#   - SDP_API_KEY          an AGENT key of the SDP tenant that reads this n8n back, for the capture suite
 #
 # Build and pack always run. Installing is opt-in because this configuration builds every branch
 # (+:refs/heads/*) while there is a single n8n instance: without the guard, whichever branch built last
@@ -292,3 +295,25 @@ if [ "${FAILS}" -ne 0 ]; then
   exit 1
 fi
 echo "✅ n8n reports the SDP credential type as loaded, and rejects one that does not exist"
+
+# -------------------------------------------------------------------------------------------------------
+# 5. Run workflows through the node, and ask SDP whether it captured them
+# -------------------------------------------------------------------------------------------------------
+
+# A loaded credential type says nothing about the node at run time. The suite drives real runs on the
+# instance and reads each capture back from SDP (capture.test.mts), into integration-capture.xml.
+# Skipped, not failed, while TeamCity has no SDP key yet (FCT-1650): it shows as a skipped test, not a green one.
+if [ -z "${SDP_API_KEY:-}" ] || [ -z "${SDP_URL}" ]; then
+  echo "⚠️ SDP_URL or SDP_API_KEY is not set: the capture suite did not run."
+  printf '%s\n' '<?xml version="1.0" encoding="UTF-8"?>' \
+    '<testsuite name="n8n-nodes-sdp capture" tests="1" failures="0" errors="0" skipped="1">' \
+    '  <testcase classname="n8n.capture" name="capture suite">' \
+    '    <skipped message="SDP_URL or SDP_API_KEY is not set"/>' \
+    '  </testcase>' \
+    '</testsuite>' > "${PKG_DIR}/integration-capture.xml"
+  exit 0
+fi
+echo "➡️ Running the capture suite against ${API_URL} and ${SDP_URL}"
+npm run typecheck:test
+N8N_URL="${API_URL}" SDP_URL="${SDP_URL}" npm run test:integration
+echo "✅ The capture suite passed"

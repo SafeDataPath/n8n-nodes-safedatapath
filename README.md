@@ -103,6 +103,24 @@ Built with the [`@n8n/node-cli`](https://www.npmjs.com/package/@n8n/node-cli) to
 has **no runtime dependencies** (verified-node requirement): HTTP uses n8n's helpers and hashing uses
 Node's built-in `crypto`.
 
+## Integration tests
+
+`test/integration/capture.test.mts` drives a real n8n through its public API: it creates `sdpApi`
+credentials and workflows, fires them by webhook, reads each capture back from SDP, then deletes what
+it created. Three cases: a successful run is captured; a failed run is still captured; a wrong SDP
+key captures nothing and does not stop the run.
+
+```bash
+export N8N_URL=https://n8n.example.com N8N_API_KEY=...
+export SDP_URL=https://sdp.example.com SDP_API_KEY=...   # AGENT key of the tenant that reads this n8n back
+npm run typecheck:test
+npm run test:integration   # JUnit report in integration-capture.xml
+```
+
+The node type defaults to `CUSTOM.sdp`, the name n8n gives a node installed in its custom directory;
+set `N8N_SDP_NODE_TYPE=n8n-nodes-sdp.sdp` for a node installed from npm. The TeamCity build
+`sdp_N8nNodeIntegration` runs it through `test/integration/ci.sh`, after deploying the branch build.
+
 ## Publishing
 
 Publishing is automated from the **repository-root** GitHub Actions workflow
