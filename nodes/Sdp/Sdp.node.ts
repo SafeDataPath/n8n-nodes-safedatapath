@@ -75,6 +75,18 @@ const SEARCH_ALIASES = [
 	'RFC 3161',
 ];
 
+/**
+ * Shown in the output panel of this run (FCT-1778). The run stays green, so this is the only sign in n8n that
+ * SafeDataPath did not get it. SafeDataPath may still record it later from the n8n API.
+ */
+function warnNotRecorded(ctx: IExecuteFunctions, executionId: string, reason: string): void {
+	ctx.addExecutionHints({
+		message: `SafeDataPath did not record run ${executionId}: ${reason}`,
+		type: 'warning',
+		location: 'outputPane',
+	});
+}
+
 /** The credential of the Authentication option chosen on this node. API Key for a node saved before it existed. */
 function credentialName(ctx: IExecuteFunctions): string {
 	const authentication = ctx.getNodeParameter('authentication', 0, 'apiKey') as string;
@@ -250,6 +262,7 @@ export class Sdp implements INodeType {
 			baseUrl = String(credentials.baseUrl ?? '').replace(/\/+$/, '');
 		} catch (error) {
 			this.logger.warn(`SafeDataPath: run ${executionId} not recorded, no credential: ${describe(error)}`);
+			warnNotRecorded(this, executionId, 'no usable credential.');
 			if (manual && !this.continueOnFail()) {
 				throw new NodeOperationError(this.getNode(), 'Connect a SafeDataPath credential to record this run.', {
 					description: 'Open the node and choose or create a SafeDataPath credential.',
@@ -280,6 +293,7 @@ export class Sdp implements INodeType {
 			this.logger.warn(
 				`SafeDataPath: run ${executionId} not recorded at ${baseUrl}${CAPTURE_PATH}: ${describe(failure)}`,
 			);
+			warnNotRecorded(this, executionId, `${describe(failure)}.`);
 			if (manual && isCredentialRefused(failure) && !this.continueOnFail()) {
 				throw new NodeOperationError(this.getNode(), 'SafeDataPath refused this credential.', {
 					description: `Reconnect the credential or check its key. ${describe(failure)}`,
