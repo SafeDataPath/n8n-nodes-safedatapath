@@ -11,6 +11,9 @@ import {
 	type INodeType,
 	type INodeTypeDescription,
 } from 'n8n-workflow';
+// Search terms of the node picker (FCT-1746). n8n reads this file, not description.codex, for a node it
+// loads from its custom folder, which is how SafeDataPath installs it.
+import codex from './Sdp.node.json';
 
 // Every SafeDataPath endpoint lives under /api. Without the prefix the request falls through to the
 // single-page-app catch-all, which answers 200 with index.html: a "success" that captured nothing.
@@ -48,31 +51,6 @@ const CREDENTIAL_BY_AUTHENTICATION: Record<string, string> = {
 const AUTHENTICATION_OPTIONS: INodePropertyOptions[] = [
 	{ name: 'OAuth2 (SafeDataPath, Microsoft or Google)', value: 'oAuth2' },
 	{ name: 'API Key (Machine User)', value: 'apiKey' },
-];
-
-/** Search terms of the node picker (FCT-1746). n8n reads them from description.codex. */
-const SEARCH_ALIASES = [
-	'SDP',
-	'Safe Data Path',
-	'Factiven',
-	'traceability',
-	'provenance',
-	'data provenance',
-	'audit',
-	'audit trail',
-	'data lineage',
-	'proof',
-	'evidence',
-	'chain of custody',
-	'verification',
-	'certificate',
-	'timestamp',
-	'fingerprint',
-	'hash',
-	'tamper evident',
-	'compliance',
-	'eIDAS',
-	'RFC 3161',
 ];
 
 /**
@@ -201,7 +179,7 @@ export class Sdp implements INodeType {
 		defaults: { name: 'SafeDataPath' },
 		// One run, one record: a second node would only add a second request for the same run.
 		maxNodes: 1,
-		codex: { alias: SEARCH_ALIASES },
+		codex: { alias: codex.alias },
 		usableAsTool: true,
 		inputs: [NodeConnectionTypes.Main],
 		outputs: [NodeConnectionTypes.Main],
