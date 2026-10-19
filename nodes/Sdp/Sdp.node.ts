@@ -274,6 +274,11 @@ export class Sdp implements INodeType {
 		let failure: unknown;
 		try {
 			const body: IDataObject = { executionId };
+			// So SafeDataPath can name the run before it reads it back from n8n (FCT-1779).
+			const workflowName = this.getWorkflow().name;
+			if (workflowName) {
+				body.workflowName = workflowName;
+			}
 			const binaryDigests = await collectBinaryDigests(this);
 			if (binaryDigests.length > 0) {
 				body.binaryHashes = binaryDigests;
