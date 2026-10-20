@@ -52,5 +52,8 @@
   },
   "bugs": {
     "url": "https://github.com/SafeDataPath/n8n-nodes-safedatapath/issues"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
