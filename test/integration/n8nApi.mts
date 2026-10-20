@@ -62,8 +62,11 @@ export class N8nApi {
 		return this.call('GET', '/community-packages');
 	}
 
+	// allowedDomains is n8n's own public-API requirement for a credential with a dynamic base URL (SSRF
+	// guard), not an SDP property: empty means unrestricted, the same as a credential made in the editor,
+	// which the UI never asks for. Omitting it makes the POST fail schema validation entirely.
 	createCredential(name: string, type: string, data: Record<string, unknown>): Promise<{ id: string; name: string }> {
-		return this.call('POST', '/credentials', { name, type, data });
+		return this.call('POST', '/credentials', { name, type, data: { allowedDomains: '', ...data } });
 	}
 
 	async deleteCredential(id: string): Promise<void> {

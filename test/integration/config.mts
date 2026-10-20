@@ -14,6 +14,14 @@ export interface IntegrationConfig {
 	expectedPackageVersion: string | undefined;
 	/** Upper bound for SDP to capture a run and call back. */
 	captureTimeoutMs: number;
+	/**
+	 * A human account that can approve the n8n Connect app (OAUTH_CODE_INSERT: TENANT_ADMIN, MANAGER or
+	 * CREATOR, never AGENT). Drives the OAuth2 scenario the same way a visitor signing in and clicking
+	 * Connect would, since nothing here can click a real button (FCT-1746).
+	 */
+	sdpOauthEmail: string;
+	sdpOauthPassword: string;
+	sdpOauthTenantAlias: string;
 }
 
 // ci.sh installs into n8n's custom directory, whose nodes n8n names CUSTOM.<name>. From npm it is n8n-nodes-sdp.sdp.
@@ -49,5 +57,8 @@ export function loadConfig(): IntegrationConfig {
 		sdpNodeType: process.env.N8N_SDP_NODE_TYPE?.trim() || DEFAULT_SDP_NODE_TYPE,
 		expectedPackageVersion: process.env.N8N_SDP_PACKAGE_VERSION?.trim() || undefined,
 		captureTimeoutMs: positiveInt('SDP_CAPTURE_TIMEOUT_SECONDS', DEFAULT_CAPTURE_TIMEOUT_SECONDS) * 1000,
+		sdpOauthEmail: required('SDP_OAUTH_EMAIL'),
+		sdpOauthPassword: required('SDP_OAUTH_PASSWORD'),
+		sdpOauthTenantAlias: required('SDP_OAUTH_TENANT_ALIAS'),
 	};
 }

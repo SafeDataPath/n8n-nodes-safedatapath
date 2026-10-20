@@ -11,6 +11,7 @@ import { SdpApi } from './sdpApi.mts';
 import type { VerificationSummary } from './sdpApi.mts';
 import { FILE_NAME, SDP_NODE_NAME, captureWorkflow, startPath } from './workflows.mts';
 import type { CredentialRef } from './workflows.mts';
+import { obtainOauthToken } from './sdpOauth.mts';
 
 const POLL_INTERVAL_MS = 2000;
 const RUN_TIMEOUT_MS = 60_000;
@@ -25,6 +26,7 @@ let sdp: SdpApi;
 let runId: string;
 let goodCredential: CredentialRef;
 let badCredential: CredentialRef;
+let oauthCredential: CredentialRef;
 // The wrong key case reads "no pipeline" as a refusal only once a capture was seen in this same run.
 let captureSeen = false;
 const createdWorkflows: string[] = [];
@@ -49,7 +51,15 @@ function firstOutput(execution: Execution, nodeName: string): Record<string, unk
 }
 
 /** Creates and activates one capture workflow, fires it, and waits for its run to end. */
-async function runScenario(scenario: string, credential: CredentialRef, failAfterCapture: boolean): Promise<Execution> {
+async function runScenario(
+	scenario: string,
+	credential: CredentialRef,
+	failAfterCapture: boolean,
+	authOptions: { authentication: 'apiKey' | 'oAuth2'; credentialType: 'sdpApi' | 'sdpOAuth2Api' } = {
+		authentication: 'apiKey',
+		credentialType: 'sdpApi',
+	},
+): Promise<Execution> {
 	const scenarioId = `${runId}-${scenario}`;
 	const workflow = await n8n.createWorkflow(
 		captureWorkflow({
@@ -58,6 +68,7 @@ async function runScenario(scenario: string, credential: CredentialRef, failAfte
 			credential,
 			fileContent: `SDP integration test ${scenarioId}\n`,
 			failAfterCapture,
+			...authOptions,
 		}),
 	);
 	createdWorkflows.push(workflow.id);
@@ -121,6 +132,27 @@ before(async () => {
 	});
 	createdCredentials.push(bad.id);
 	badCredential = { id: bad.id, name: bad.name };
+
+	// The same three calls n8n itself makes once a visitor signs in and clicks Connect (FCT-1740).
+	const oauthTokenData = await obtainOauthToken(
+		config.sdpUrl,
+		config.sdpOauthEmail,
+		config.sdpOauthPassword,
+		config.sdpOauthTenantAlias,
+		`${config.n8nUrl}/rest/oauth2-credential/callback`,
+	);
+	// Once oauthTokenData is present, the public API validates against the base oAuth2Api shape alone,
+	// not the full sdpOAuth2Api type: SDP's own hidden fields (baseUrl, grantType, authUrl...) are then
+	// refused as unknown, and three base-type fields SDP never uses become required regardless. Found by
+	// probing the schema directly; the editor UI never hits this, it only ever submits the full type.
+	const oauth = await n8n.createCredential(`SDP integration test ${runId} - oauth2`, 'sdpOAuth2Api', {
+		serverUrl: '',
+		sendAdditionalBodyProperties: false,
+		additionalBodyProperties: '{}',
+		oauthTokenData,
+	});
+	createdCredentials.push(oauth.id);
+	oauthCredential = { id: oauth.id, name: oauth.name };
 });
 
 // Cleans every attempt, then fails loudly if one did not go through.
@@ -165,4 +197,16 @@ test('a wrong SDP API key captures nothing and does not stop the run', { timeout
 	await sleep(NO_CAPTURE_WAIT_MS);
 	const answer = await sdp.verificationSummary(String(execution.id));
 	assert.equal(answer.status, 404, `execution ${execution.id} was captured with a wrong key: ${answer.text}`);
+});
+
+// The expected path for a real visitor (FCT-1746): sign in, approve Connect, no API key ever typed in.
+test('a run captured through OAuth2 Connect, the same as a signed-in visitor', { timeout: RUN_TIMEOUT_MS * 5 }, async () => {
+	const execution = await runScenario('oauth2', oauthCredential, false, {
+		authentication: 'oAuth2',
+		credentialType: 'sdpOAuth2Api',
+	});
+	assert.equal(execution.status, 'success', execution.data?.resultData?.error?.message);
+	assertPassedThrough(execution);
+
+	assertCaptured(await waitForCapture(String(execution.id)));
 });

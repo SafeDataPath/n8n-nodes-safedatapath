@@ -27,6 +27,9 @@ export interface CaptureWorkflowOptions {
 	fileContent: string;
 	/** Adds a node after the SDP node that throws, so the run ends in error. */
 	failAfterCapture: boolean;
+	/** Which Authentication option the node uses, and the credential type that goes with it (FCT-1746). */
+	authentication?: 'apiKey' | 'oAuth2';
+	credentialType?: 'sdpApi' | 'sdpOAuth2Api';
 }
 
 function webhookNode(name: string, path: string): WorkflowNode {
@@ -71,15 +74,16 @@ export function captureWorkflow(options: CaptureWorkflowOptions): WorkflowDefini
 		].join('\n'),
 		200,
 	);
+	const authentication = options.authentication ?? 'apiKey';
+	const credentialType = options.credentialType ?? 'sdpApi';
 	const sdp: WorkflowNode = {
 		id: randomUUID(),
 		name: SDP_NODE_NAME,
 		type: options.sdpNodeType,
 		typeVersion: 2,
 		position: [400, 0],
-		// Version 2 defaults to OAuth2, whose connect step needs a browser.
-		parameters: { authentication: 'apiKey' },
-		credentials: { sdpApi: options.credential },
+		parameters: { authentication },
+		credentials: { [credentialType]: options.credential },
 	};
 	const nodes = [webhookNode('Start', startPath(options.runId)), makeFile, sdp];
 	const connections: WorkflowDefinition['connections'] = {
