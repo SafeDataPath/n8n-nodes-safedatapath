@@ -259,6 +259,11 @@ export class Sdp implements INodeType {
 			if (workflowName) {
 				body.workflowName = workflowName;
 			}
+			// FCT-1785: SafeDataPath reads the run back from this n8n, not from one address set on its server.
+			const instanceUrl = (this.getInstanceBaseUrl() ?? '').replace(/\/+$/, '');
+			if (instanceUrl) {
+				body.instanceUrl = instanceUrl;
+			}
 			const binaryDigests = await collectBinaryDigests(this);
 			if (binaryDigests.length > 0) {
 				body.binaryHashes = binaryDigests;

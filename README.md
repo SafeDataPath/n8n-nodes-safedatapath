@@ -39,8 +39,9 @@ Click **Test** in the credential to check the key: it passes only if SafeDataPat
 
 **Place the node first in your workflow**, right after the trigger. When it runs, it asks SafeDataPath to record
 the run and passes its input items on unchanged, so the next nodes receive the trigger data as before.
-SafeDataPath reads the run back from n8n once it ends: the record appears a few seconds after the run finishes,
-including the steps that ran after the node.
+SafeDataPath reads the run back from the n8n instance that sent it, once the run ends: the record appears a few
+seconds after the run finishes, including the steps that ran after the node. A self-hosted n8n must be reachable
+from the internet at the address n8n knows itself by (`N8N_EDITOR_BASE_URL`).
 
 Files that reach the node are fingerprinted with SHA-512. Only the fingerprints are sent; the files stay in n8n.
 
@@ -67,9 +68,9 @@ the downloaded invoice.
 the credential's key is wrong, has no right to register pipelines, or n8n is not enabled for your SafeDataPath
 account: click **Test** in the credential. A timeout means SafeDataPath could not be reached from your n8n.
 
-**Nothing appears in SafeDataPath.** SafeDataPath reads the run back from n8n, so it needs an n8n API key for your
-n8n instance. Save one on the Secret page in SafeDataPath, and make sure that key may read your workflows and
-executions.
+**Nothing appears in SafeDataPath.** SafeDataPath reads the run back from your n8n, so it needs an n8n API key of
+that same instance. Save it on the Secret page in SafeDataPath, and make sure it may read your workflows and
+executions. When you move to another n8n instance, replace the key there.
 
 ## Compatibility
 
