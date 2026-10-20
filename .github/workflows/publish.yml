@@ -1,8 +1,8 @@
 # Publishes the package to npm with a provenance statement on every version tag (for example 0.1.0),
 # as n8n requires for verified community nodes. Run `npm run release` locally to bump, tag and push.
 #
-# npm authentication: a Trusted Publisher on npmjs.com (this repository, publish.yml) once the package
-# exists, or an NPM_TOKEN repository secret, needed for the very first publish.
+# npm authentication: the Trusted Publisher set on npmjs.com for this repository and publish.yml (OIDC).
+# No token is stored; an NPM_TOKEN secret is only a fallback.
 
 name: Publish
 
@@ -45,4 +45,3 @@ jobs:
           npm run release
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          NPM_CONFIG_LOGLEVEL: verbose
