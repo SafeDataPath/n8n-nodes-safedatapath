@@ -1,6 +1,6 @@
 {
   "name": "n8n-nodes-safedatapath",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "SafeDataPath node for n8n: record every workflow run as verifiable, tamper-evident proof.",
   "keywords": [
     "n8n-community-node-package",
