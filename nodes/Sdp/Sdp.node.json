@@ -1,0 +1,29 @@
+{
+	"node": "n8n-nodes-safedatapath.sdp",
+	"nodeVersion": "1.0",
+	"codexVersion": "1.0",
+	"alias": [
+		"SDP",
+		"Safe Data Path",
+		"Factiven",
+		"traceability",
+		"provenance",
+		"data provenance",
+		"audit",
+		"audit trail",
+		"data lineage",
+		"proof",
+		"evidence",
+		"chain of custody",
+		"verification",
+		"certificate",
+		"timestamp",
+		"fingerprint",
+		"hash",
+		"tamper evident",
+		"compliance",
+		"eIDAS",
+		"RFC 3161"
+	],
+	"resources": {}
+}

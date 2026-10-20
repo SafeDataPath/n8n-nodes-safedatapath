@@ -1,0 +1,41 @@
+# Publishes the package to npm with a provenance statement on every version tag (for example 0.1.0),
+# as n8n requires for verified community nodes. Run `npm run release` locally to bump, tag and push.
+#
+# npm authentication: a Trusted Publisher on npmjs.com (this repository, publish.yml) once the package
+# exists, or an NPM_TOKEN repository secret, needed for the very first publish.
+
+name: Publish
+
+on:
+  push:
+    tags:
+      - '*.*.*'
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Release
+        # Lint, build, then npm publish with provenance (n8n-node release in CI mode).
+        run: |
+          [ -n "$NPM_TOKEN" ] && npm config set //registry.npmjs.org/:_authToken "$NPM_TOKEN"
+          npm run release
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

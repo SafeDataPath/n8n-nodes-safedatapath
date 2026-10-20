@@ -1,0 +1,56 @@
+{
+  "name": "n8n-nodes-safedatapath",
+  "version": "0.1.0",
+  "description": "SafeDataPath node for n8n: record every workflow run as verifiable, tamper-evident proof.",
+  "keywords": [
+    "n8n-community-node-package",
+    "n8n",
+    "sdp",
+    "safedatapath",
+    "provenance",
+    "traceability"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/SafeDataPath/n8n-nodes-safedatapath#readme",
+  "author": {
+    "name": "SafeDataPath",
+    "email": "support@factiven.io"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SafeDataPath/n8n-nodes-safedatapath.git"
+  },
+  "engines": {
+    "node": ">=20.15"
+  },
+  "scripts": {
+    "build": "n8n-node build",
+    "dev": "n8n-node dev",
+    "lint": "n8n-node lint",
+    "release": "n8n-node release"
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "strict": true,
+    "credentials": [
+      "dist/credentials/SdpApi.credentials.js",
+      "dist/credentials/SdpOAuth2Api.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/Sdp/Sdp.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@n8n/node-cli": "^0.36.2",
+    "n8n-workflow": "^2.16.0"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  },
+  "bugs": {
+    "url": "https://github.com/SafeDataPath/n8n-nodes-safedatapath/issues"
+  }
+}
