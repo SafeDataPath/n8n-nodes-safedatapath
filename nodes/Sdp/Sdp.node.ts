@@ -174,7 +174,9 @@ export class Sdp implements INodeType {
 		// keeps API Key, so an existing workflow keeps its credential.
 		version: [1, 2],
 		defaultVersion: 2,
-		subtitle: 'Capture this run in SafeDataPath',
+		// Present tense, n8n's own word for a run ("Execute workflow"), and no repeat of the node's own
+		// name shown right above it: the original text truncated on the canvas at typical node width.
+		subtitle: 'Captures this execution',
 		description: 'Turn every workflow run into verifiable proof',
 		defaults: { name: 'SafeDataPath' },
 		// One run, one record: a second node would only add a second request for the same run.

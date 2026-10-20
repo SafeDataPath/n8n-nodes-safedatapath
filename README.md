@@ -27,8 +27,8 @@ and self-hosted alike. For a local or test SDP, set the address on the n8n insta
 CREDENTIALS_OVERWRITE_DATA={"sdpOAuth2Api":{"baseUrl":"http://localhost:8081"}}
 ```
 
-This needs the SDP OAuth2 server of FCT-1628. Until it ships, Connect opens the SDP trial entry flow
-(`/trial?entry=n8n`), where the visitor signs in or creates an account, but no token comes back to n8n.
+Connect opens the SDP trial entry flow (`/trial?entry=n8n`): the visitor signs in or creates an account,
+approves, and n8n gets a real working token back (FCT-1740).
 
 **API Key (Machine User)**: create a **SafeDataPath API** credential:
 
