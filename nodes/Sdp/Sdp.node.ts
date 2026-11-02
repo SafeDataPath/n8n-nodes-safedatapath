@@ -177,7 +177,7 @@ export class Sdp implements INodeType {
 		// Present tense, n8n's own word for a run ("Execute workflow"), and no repeat of the node's own
 		// name shown right above it: the original text truncated on the canvas at typical node width.
 		subtitle: 'Captures this execution',
-		description: 'Deprecated: install @safedatapath/n8n-nodes-safedatapath instead',
+		description: 'Turn every workflow run into verifiable proof',
 		defaults: { name: 'SafeDataPath' },
 		// One run, one record: a second node would only add a second request for the same run.
 		maxNodes: 1,
@@ -191,13 +191,6 @@ export class Sdp implements INodeType {
 			{ name: 'sdpOAuth2Api', required: true, displayOptions: { show: { authentication: ['oAuth2'] } } },
 		],
 		properties: [
-			{
-				displayName:
-					'This package is deprecated and gets no more updates. Install @safedatapath/n8n-nodes-safedatapath instead, then replace this node with the new one.',
-				name: 'deprecationNotice',
-				type: 'notice',
-				default: '',
-			},
 			{
 				displayName: 'Authentication',
 				name: 'authentication',
