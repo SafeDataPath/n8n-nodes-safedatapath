@@ -1,5 +1,9 @@
 # n8n-nodes-safedatapath
 
+> **Deprecated.** This package gets no more updates. Install
+> [`@safedatapath/n8n-nodes-safedatapath`](https://www.npmjs.com/package/@safedatapath/n8n-nodes-safedatapath)
+> instead, then replace the SafeDataPath node in your workflows with the new one.
+
 An [n8n](https://n8n.io) community node for [SafeDataPath](https://safedatapath.io). Add it to a workflow and
 SafeDataPath records every run of that workflow as verifiable proof: which steps ran, in which order, with what
 outcome, and a SHA-512 fingerprint of every file that reached the node. Anyone can later check that a record has

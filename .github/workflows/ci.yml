@@ -19,7 +19,8 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 'lts/*'
+          # Not lts/*: isolated-vm 6.1.2, from n8n-workflow, does not build on Node 26.
+          node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
