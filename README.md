@@ -1,6 +1,6 @@
 # n8n-nodes-safedatapath
 
-An [n8n](https://n8n.io) community node for [SafeDataPath](https://safedatapath.io). Add it to a workflow and
+An [n8n](https://n8n.io) community node for [SafeDataPath]([https://factiven.com/product](https://www.factiven.com/en/safedatapath)). Add it to a workflow and
 SafeDataPath records every run of that workflow as verifiable proof: which steps ran, in which order, with what
 outcome, and a SHA-512 fingerprint of every file that reached the node. Anyone can later check that a record has
 not been altered since.
