@@ -1,0 +1,56 @@
+{
+  "name": "n8n-nodes-sdp",
+  "version": "0.1.0",
+  "description": "n8n community node for SafeDataPath (SDP) - register workflow execution provenance with cryptographic checksums.",
+  "keywords": [
+    "n8n-community-node-package",
+    "n8n",
+    "sdp",
+    "safedatapath",
+    "provenance",
+    "traceability"
+  ],
+  "license": "MIT",
+  "homepage": "https://safedatapath.io",
+  "author": {
+    "name": "Factiven",
+    "email": "engineering@safedatapath.io"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/factiven/sdp.git",
+    "directory": "n8n-nodes-sdp"
+  },
+  "engines": {
+    "node": ">=20.15"
+  },
+  "scripts": {
+    "build": "n8n-node build",
+    "dev": "n8n-node dev",
+    "lint": "n8n-node lint",
+    "release": "n8n-node release",
+    "typecheck:test": "tsc -p tsconfig.test.json",
+    "test:integration": "node --experimental-strip-types --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=integration-capture.xml \"test/integration/*.test.mts\""
+  },
+  "files": [
+    "dist"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "strict": true,
+    "credentials": [
+      "dist/credentials/SdpApi.credentials.js",
+      "dist/credentials/SdpOAuth2Api.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/Sdp/Sdp.node.js"
+    ]
+  },
+  "devDependencies": {
+    "@n8n/node-cli": "^0.36.2",
+    "n8n-workflow": "^2.16.0"
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
+}

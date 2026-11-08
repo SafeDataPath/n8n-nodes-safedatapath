@@ -1,0 +1,74 @@
+{
+  "name": "SDP demo - PDF fingerprint",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "b1a7c0de-0001-4000-8000-000000000001",
+      "name": "When clicking Test"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Builds a small but structurally valid PDF in-process.\n// No network and no credentials, and byte-identical on every run - so the SHA-512 that SDP registers is the\n// SAME on a second run. That is the point of the demo: the digest identifies the file, nothing else.\n// Change a line below and re-run: the digest changes, because the file changed.\nfunction buildPdf(lines) {\n  const objects = [];\n  objects[1] = '<< /Type /Catalog /Pages 2 0 R >>';\n  objects[2] = '<< /Type /Pages /Kids [3 0 R] /Count 1 >>';\n  objects[3] =\n    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Contents 4 0 R ' +\n    '/Resources << /Font << /F1 5 0 R >> >> >>';\n\n  let text = 'BT /F1 14 Tf 60 760 Td 18 TL\\n';\n  for (const line of lines) {\n    text += '(' + line.replace(/([()\\\\])/g, '\\\\$1') + ') Tj T*\\n';\n  }\n  text += 'ET';\n  objects[4] = '<< /Length ' + Buffer.byteLength(text, 'latin1') + ' >>\\nstream\\n' + text + '\\nendstream';\n  objects[5] = '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>';\n\n  let pdf = '%PDF-1.4\\n';\n  const offsets = [];\n  for (let i = 1; i < objects.length; i++) {\n    offsets[i] = Buffer.byteLength(pdf, 'latin1');\n    pdf += i + ' 0 obj\\n' + objects[i] + '\\nendobj\\n';\n  }\n  const xrefAt = Buffer.byteLength(pdf, 'latin1');\n  pdf += 'xref\\n0 ' + objects.length + '\\n0000000000 65535 f \\n';\n  for (let i = 1; i < objects.length; i++) {\n    pdf += String(offsets[i]).padStart(10, '0') + ' 00000 n \\n';\n  }\n  pdf += 'trailer\\n<< /Size ' + objects.length + ' /Root 1 0 R >>\\nstartxref\\n' + xrefAt + '\\n%%EOF\\n';\n  return Buffer.from(pdf, 'latin1');\n}\n\nconst pdf = buildPdf(['SDP demo invoice', 'Amount: 1 240.00 EUR', 'Reference: DEMO-0001']);\n\nreturn [\n  {\n    json: { fileName: 'sdp-demo-invoice.pdf', bytes: pdf.length },\n    binary: { data: await this.helpers.prepareBinaryData(pdf, 'sdp-demo-invoice.pdf', 'application/pdf') },\n  },\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        0
+      ],
+      "id": "b1a7c0de-0002-4000-8000-000000000002",
+      "name": "Generate invoice PDF"
+    },
+    {
+      "parameters": {},
+      "type": "CUSTOM.sdp",
+      "typeVersion": 1,
+      "position": [
+        500,
+        0
+      ],
+      "id": "b1a7c0de-0003-4000-8000-000000000003",
+      "name": "SDP",
+      "credentials": {
+        "sdpApi": {
+          "id": "fRPQMXOnt9D7mLKv",
+          "name": "SDP account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "When clicking Test": {
+      "main": [
+        [
+          {
+            "node": "Generate invoice PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate invoice PDF": {
+      "main": [
+        [
+          {
+            "node": "SDP",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {}
+}
