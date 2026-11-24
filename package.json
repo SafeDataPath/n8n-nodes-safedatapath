@@ -27,7 +27,9 @@
     "build": "n8n-node build",
     "dev": "n8n-node dev",
     "lint": "n8n-node lint",
-    "release": "n8n-node release"
+    "release": "n8n-node release",
+    "typecheck:test": "tsc -p tsconfig.test.json",
+    "test:integration": "node --experimental-strip-types --test --test-reporter=spec --test-reporter-destination=stdout --test-reporter=junit --test-reporter-destination=integration-capture.xml \"test/integration/*.test.mts\""
   },
   "files": [
     "dist"
