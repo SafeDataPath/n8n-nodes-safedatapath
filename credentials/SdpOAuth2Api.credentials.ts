@@ -11,7 +11,7 @@ export class SdpOAuth2Api implements ICredentialType {
 
 	displayName = 'SafeDataPath OAuth2 API';
 
-	documentationUrl = 'https://safedatapath.io';
+	documentationUrl = 'https://www.factiven.com';
 
 	// Same logo as the node, so the Connect button and the credential page show SDP's own mark.
 	icon: Icon = { light: 'file:SDP_LOGO.png', dark: 'file:sdp_logo_2.png' };
